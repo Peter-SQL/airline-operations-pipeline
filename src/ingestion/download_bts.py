@@ -5,22 +5,23 @@ import zipfile
 
 import requests
 
-
-BASE_URL = "https://transtats.bts.gov/prezip/"
-FILE_PREFIX = "On_Time_Reporting_Carrier_On_Time_Performance_1987_present"
-
 BRONZE_DIR = Path("data/bronze")
 
 
+
+BASE_URL = "https://transtats.bts.gov/prezipace/"
+FILE_PREFIX = "aceOn_Time_Reporting_Carrier_On_Time_Performance_1987_present"
+
+
+# Example for correct file name: "On_Time_Reporting_Carrier_On_Time_Performance_1987_present_2025_1.zip"
 def get_filename(year: int, month: int) -> str:
     return f"{FILE_PREFIX}_{year}_{month}.zip"
-
 
 def get_download_url(year: int, month: int) -> str:
     return BASE_URL + get_filename(year, month)
 
 
-def download_month(year: int, month: int) -> Path:
+def download_period(year: int, month: int) -> Path:
     target_dir = BRONZE_DIR / f"{year}-{month:02d}"
     target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -29,13 +30,16 @@ def download_month(year: int, month: int) -> Path:
     url = get_download_url(year, month)
 
     if zip_path.exists():
-        print(f"Already downloaded: {zip_path}")
+        print(f"File {zip_path} already exists")
         return zip_path
+
 
     print(f"Downloading: {url}")
 
     response = requests.get(url, stream=True, timeout=120)
     response.raise_for_status()
+
+    print(raise_for_status())
 
     with open(zip_path, "wb") as file:
         for chunk in response.iter_content(chunk_size=1024 * 1024):
@@ -56,22 +60,22 @@ def extract_zip(zip_path: Path) -> None:
     print(f"Extracted to: {target_dir}")
 
 
-def get_latest_available_month() -> tuple[int, int]:
-    response = requests.get(BASE_URL, timeout=30)
-    response.raise_for_status()
+# def get_latest_available_month() -> tuple[int, int]:
+#     response = requests.get(BASE_URL, timeout=30)
+#     response.raise_for_status()
 
-    pattern = re.compile(
-        rf"{re.escape(FILE_PREFIX)}_(\d{{4}})_(\d{{1,2}})\.zip"
-    )
+#     pattern = re.compile(
+#         rf"{re.escape(FILE_PREFIX)}_(\d{{4}})_(\d{{1,2}})\.zip"
+#     )
 
-    matches = pattern.findall(response.text)
+#     matches = pattern.findall(response.text)
 
-    if not matches:
-        raise RuntimeError("No BTS monthly files found.")
+#     if not matches:
+#         raise RuntimeError("No BTS monthly files found.")
 
-    periods = [(int(year), int(month)) for year, month in matches]
+#     periods = [(int(year), int(month)) for year, month in matches]
 
-    return max(periods)
+#     return max(periods)
 
 
 def main():
@@ -107,7 +111,7 @@ def main():
     if not 1 <= month <= 12:
         parser.error("Month must be between 1 and 12.")
 
-    zip_path = download_month(year, month)
+    zip_path = download_period(year, month)
 
     if args.extract:
         extract_zip(zip_path)
