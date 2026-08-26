@@ -100,7 +100,6 @@ def get_with_retries(url: str, max_retries: int = 5) -> requests.Response:
     return None
 
 
-
 def main():
     parser = argparse.ArgumentParser(
         description="Download monthly BTS airline data."
