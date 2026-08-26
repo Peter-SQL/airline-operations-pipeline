@@ -104,6 +104,10 @@ def transformation_silver(year: int, month: int) -> None:
                 "SecurityDelay",
                 "LateAircraftDelay",
             )
+           .withColumn(
+                "FlightDate",
+                F.to_date(F.col("FlightDate"))
+            )
             .withColumn(
                 "Cancelled",
                 F.col("Cancelled").cast("integer")
@@ -111,6 +115,14 @@ def transformation_silver(year: int, month: int) -> None:
             .withColumn(
                 "Diverted",
                 F.col("Diverted").cast("integer")
+            )
+            .withColumn(
+                "DepDel15",
+                F.col("DepDel15").cast("integer")
+            )
+            .withColumn(
+                "ArrDel15",
+                F.col("ArrDel15").cast("integer")
             )
             .filter(F.col("OriginAirportID").isNotNull())
             .filter(F.col("DestAirportID").isNotNull())
