@@ -5,7 +5,12 @@ from pyspark.sql import functions as F
 
 from datetime import datetime
 
-from config.paths import BRONZE_FLIGHTS, SILVER_FLIGHTS
+from config.paths import (
+    BRONZE_FLIGHTS,
+    SILVER_FLIGHTS,
+    SILVER_FLIGHT_REPORTS,
+)
+
 
 REQUIRED_COLUMNS = [
     "Year", "Quarter", "Month", "DayofMonth", "DayOfWeek", "FlightDate", "DOT_ID_Reporting_Airline", "Flight_Number_Reporting_Airline", "OriginAirportID",
@@ -483,14 +488,15 @@ def transformation_silver(year: int, month: int) -> None:
         # ---------------------------------------------------------
 
         report_dir = (
-            SILVER_FLIGHTS.parent
-            / "validation"
-            / "flights"
+            SILVER_FLIGHT_REPORTS
             / f"year={year}"
             / f"month={month:02d}"
         )
 
-        report_path = output_path / "validation_report.txt"
+        report_dir.mkdir(parents=True, exist_ok=True)
+
+        report_path = report_dir / "validation_report.txt"
+
         run_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         report_lines = [
@@ -559,7 +565,6 @@ def transformation_silver(year: int, month: int) -> None:
         )
 
         print(f"Validation report written to: {report_path}")
-
 
 
     finally:

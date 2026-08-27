@@ -5,7 +5,9 @@ from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
 from config.paths import (
-    BRONZE_REFERENCE, SILVER_REFERENCE,
+    BRONZE_REFERENCE,
+    SILVER_REFERENCE,
+    SILVER_REFERENCE_REPORTS,
 )
 
 
@@ -29,7 +31,6 @@ REFERENCE_FILES = {
         "description_name": "AirportName",
     },
 }
-
 
 EXPECTED_COLUMNS = {"Code", "Description"}
 
@@ -62,7 +63,6 @@ def transform_reference(
     year: int,
     month: int,
 ) -> None:
-
     filename = config["filename"]
     code_type = config["code_type"]
     code_name = config["code_name"]
@@ -88,10 +88,6 @@ def transform_reference(
             f"Bronze reference file not found: {input_path}"
         )
 
-    # ---------------------------------------------------------
-    # Load Bronze
-    # ---------------------------------------------------------
-
     df = (
         spark.read
         .option("header", True)
@@ -100,24 +96,13 @@ def transform_reference(
     )
 
     bronze_count = df.count()
-
     validate_schema(df, name)
-
-    # ---------------------------------------------------------
-    # Transform
-    # ---------------------------------------------------------
 
     silver_df = (
         df
         .select("Code", "Description")
-        .withColumn(
-            "Code",
-            F.trim(F.col("Code"))
-        )
-        .withColumn(
-            "Description",
-            F.trim(F.col("Description"))
-        )
+        .withColumn("Code", F.trim(F.col("Code")))
+        .withColumn("Description", F.trim(F.col("Description")))
     )
 
     if code_type == "integer":
@@ -131,20 +116,12 @@ def transform_reference(
             F.upper(F.col("Code"))
         )
 
-    # ---------------------------------------------------------
-    # Validation report before filtering
-    # ---------------------------------------------------------
-
     validation_report = (
         silver_df
         .agg(
             F.sum(
-                F.when(
-                    F.col("Code").isNull(),
-                    1
-                ).otherwise(0)
+                F.when(F.col("Code").isNull(), 1).otherwise(0)
             ).alias("missing_code"),
-
             F.sum(
                 F.when(
                     F.col("Description").isNull()
@@ -168,41 +145,18 @@ def transform_reference(
         .count()
     )
 
-    # ---------------------------------------------------------
-    # Hard validation
-    # ---------------------------------------------------------
-
     valid_df = (
         silver_df
         .filter(F.col("Code").isNotNull())
         .filter(F.col("Description").isNotNull())
         .filter(F.col("Description") != "")
         .dropDuplicates(["Code"])
-    )
-
-    # ---------------------------------------------------------
-    # Rename columns
-    # ---------------------------------------------------------
-
-    valid_df = (
-        valid_df
-        .withColumnRenamed(
-            "Code",
-            code_name
-        )
-        .withColumnRenamed(
-            "Description",
-            description_name
-        )
+        .withColumnRenamed("Code", code_name)
+        .withColumnRenamed("Description", description_name)
     )
 
     silver_count = valid_df.count()
-
     rejected_total = bronze_count - silver_count
-
-    # ---------------------------------------------------------
-    # Write Silver
-    # ---------------------------------------------------------
 
     (
         valid_df
@@ -211,17 +165,9 @@ def transform_reference(
         .parquet(str(output_path))
     )
 
-    print(
-        f"Silver reference written to: {output_path}"
-    )
+    print(f"Silver reference written to: {output_path}")
 
-    # ---------------------------------------------------------
-    # Validation report
-    # ---------------------------------------------------------
-
-    run_timestamp = datetime.now().strftime(
-        "%Y-%m-%d %H:%M:%S"
-    )
+    run_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     report_lines = [
         "",
@@ -242,39 +188,37 @@ def transform_reference(
         "-" * 70,
         "RESULT",
         "-" * 70,
-        f"{'Total rejected':<45} "
-        f"{rejected_total:>10}",
-        f"{'Silver rows':<45} "
-        f"{silver_count:>10}",
+        f"{'Total rejected':<45} {rejected_total:>10}",
+        f"{'Silver rows':<45} {silver_count:>10}",
         "=" * 70,
     ]
 
     report_text = "\n".join(report_lines)
 
-    # Console
     print(report_text)
 
-    # TXT
-    report_path = (
-        output_path
-        / "validation_report.txt"
+    report_dir = (
+        SILVER_REFERENCE_REPORTS
+        / f"year={year}"
+        / f"month={month:02d}"
+        / name
     )
 
+    report_dir.mkdir(parents=True, exist_ok=True)
+
+    report_path = report_dir / "validation_report.txt"
     report_path.write_text(
         report_text,
         encoding="utf-8"
     )
 
-    print(
-        f"Validation report written to: {report_path}"
-    )
+    print(f"Validation report written to: {report_path}")
 
 
 def transformation_silver_references(
     year: int,
     month: int,
 ) -> None:
-
     spark = create_spark_session()
 
     try:
@@ -286,7 +230,6 @@ def transformation_silver_references(
                 year=year,
                 month=month,
             )
-
     finally:
         spark.stop()
 
@@ -299,28 +242,25 @@ def main():
     parser.add_argument(
         "--year",
         type=int,
-        required=True
+        required=True,
     )
 
     parser.add_argument(
         "--month",
         type=int,
-        required=True
+        required=True,
     )
 
     args = parser.parse_args()
 
     if not 1 <= args.month <= 12:
-        parser.error(
-            "Month must be between 1 and 12."
-        )
+        parser.error("Month must be between 1 and 12.")
 
     transformation_silver_references(
         args.year,
-        args.month
+        args.month,
     )
 
 
 if __name__ == "__main__":
     main()
-
