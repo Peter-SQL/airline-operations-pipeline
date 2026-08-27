@@ -1,30 +1,25 @@
 from pathlib import Path
+
+import argparse
 import requests
 import csv
 import random, time
 
-from config.paths import (
-    BRONZE_AIRLINES,
-    BRONZE_AIRPORTS,
-    BRONZE_AIRPORT_IDS,
-)
+from config.paths import BRONZE_REFERENCE
 
 
 REFERENCE_FILES = {
     "airlines": {
         "filename": "L_Airline_ID.csv",
         "url": "https://www.transtats.bts.gov/Download_Lookup.asp?Y11x72=Y_NVeYVaR_VQ",
-        "target_dir": BRONZE_AIRLINES,
     },
     "airports": {
         "filename": "L_Airport.csv",
         "url": "https://www.transtats.bts.gov/Download_Lookup.asp?Y11x72=Y_NVecbeg",
-        "target_dir": BRONZE_AIRPORTS,
     },
     "airport_ids": {
         "filename": "L_Airport-ID.csv",
         "url": "https://www.transtats.bts.gov/Download_Lookup.asp?Y11x72=Y_NVecbeg_VQ",
-        "target_dir": BRONZE_AIRPORT_IDS,
     },
 }
 
@@ -65,43 +60,6 @@ def validate_csv(path: Path) -> bool:
     return True
 
 
-def download_reference_file(name: str, config: dict) -> Path:
-    filename = config["filename"]
-    url = config["url"]
-
-    target_dir = config["target_dir"]
-    target_path = target_dir / filename
-
-    if target_path.exists():
-        print(f"Already exists: {target_path}")
-        return target_path
-
-    print(f"Downloading: {url}", flush= True)
-
-    response = get_with_retries(url)
-   
-    # Only create folder if needed file is found
-    target_dir.mkdir(parents=True, exist_ok=True)
-
-    with open(target_path, "wb") as file:
-        file.write(response.content)
-
-    try:
-        if not validate_csv(target_path):
-            raise ValueError(f"Invalid CSV file: {target_path}")
-    except ValueError:
-        target_path.unlink(missing_ok=True)
-        raise 
-
-
-    print(f"Validated and saved: {target_path}")
-
-    return target_path
-
-
-
-
-
 def get_with_retries(url: str, max_retries: int = 5) -> requests.Response:
 
     for attempt in range(max_retries):
@@ -136,15 +94,104 @@ def get_with_retries(url: str, max_retries: int = 5) -> requests.Response:
     raise RuntimeError(f"All retries exhausted for: {url}")
 
 
+
+def download_reference_file(
+    name: str,
+    config: dict,
+    year: int,
+    month: int,
+) -> Path:
+
+    
+    filename = config["filename"]
+    url = config["url"]
+
+    target_dir = (
+        BRONZE_REFERENCE
+        / f"year={year}"
+        / f"month={month:02d}"
+        / name
+    )
+
+    target_path = target_dir / filename
+
+    if target_path.exists():
+        if validate_csv(target_path):
+            print(f"Already exists: {target_path}")
+            return target_path
+
+        target_path.unlink()
+
+    print(
+        f"Downloading: {url}",
+        flush=True
+    )
+
+    
+    response = get_with_retries(url)
+   
+    # Only create folder if needed file is found
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    with open(target_path, "wb") as file:
+        file.write(response.content)
+
+    try:
+        if not validate_csv(target_path):
+            raise ValueError(
+                f"Invalid CSV file: {target_path}"
+            )
+        
+    except ValueError:
+        target_path.unlink(missing_ok=True)
+        raise 
+
+
+    print(f"Validated and saved: {target_path}")
+
+    return target_path
+
+
+
 def main():
+    parser = argparse.ArgumentParser(
+        description="Download BTS reference data to Bronze"
+    )
+
+    parser.add_argument(
+        "--year", type=int, required=True
+    )
+
+    parser.add_argument(
+        "--month", type=int, required=True
+    )
+
+    args = parser.parse_args()
+
+    year = args.year
+    month = args.month
+
+    if not 1 <= month <= 12:
+        parser.error(
+            "Month must be between 1 and 12."
+        )
+
     for name, config in REFERENCE_FILES.items():
         try:
-            download_reference_file(name, config)
+            download_reference_file(
+                name=name, config=config, year=year, month=month,
+            )
+
         except Exception as e:
-            print(f"{name}: FAILED - {e}")
+            print(
+                f"{name}: FAILED - {e}"
+            )
             raise
+
         else:
-            print(f"{name}: OK")
+            print(
+                f"{name}: OK"
+            )
 
 
 if __name__ == "__main__":
