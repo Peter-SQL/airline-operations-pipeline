@@ -315,7 +315,7 @@ def main():
             "Month must be between 1 and 12."
         )
 
-    transformation_silver_reference(
+    transformation_silver_references(
         args.year,
         args.month
     )
