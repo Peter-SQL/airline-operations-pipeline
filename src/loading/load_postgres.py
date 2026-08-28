@@ -72,9 +72,13 @@ def create_tables():
         airport_id INTEGER PRIMARY KEY,
         airport_code VARCHAR(10),
         city TEXT,
+        state_code VARCHAR(2),
         state TEXT,
         airport_name TEXT
     );
+
+    ALTER TABLE analytics.dim_airport
+        ADD COLUMN IF NOT EXISTS state_code VARCHAR(2);
 
     CREATE TABLE IF NOT EXISTS analytics.fact_flight (
         flight_id BIGSERIAL PRIMARY KEY,
@@ -182,14 +186,40 @@ def load_dim_airport(spark, year, month):
     origin = flights.select(
         F.col("OriginAirportID").cast("integer").alias("airport_id"),
         F.col("Origin").alias("airport_code"),
-        F.col("OriginCityName").alias("city"),
+        F.trim(
+            F.regexp_extract(
+                F.col("OriginCityName"),
+                r"^(.*),\s*([A-Z]{2})$",
+                1,
+            )
+        ).alias("city"),
+        F.trim(
+            F.regexp_extract(
+                F.col("OriginCityName"),
+                r"^(.*),\s*([A-Z]{2})$",
+                2,
+            )
+        ).alias("state_code"),
         F.col("OriginStateName").alias("state"),
     )
 
     destination = flights.select(
         F.col("DestAirportID").cast("integer").alias("airport_id"),
         F.col("Dest").alias("airport_code"),
-        F.col("DestCityName").alias("city"),
+        F.trim(
+            F.regexp_extract(
+                F.col("DestCityName"),
+                r"^(.*),\s*([A-Z]{2})$",
+                1,
+            )
+        ).alias("city"),
+        F.trim(
+            F.regexp_extract(
+                F.col("DestCityName"),
+                r"^(.*),\s*([A-Z]{2})$",
+                2,
+            )
+        ).alias("state_code"),
         F.col("DestStateName").alias("state"),
     )
 
@@ -221,11 +251,19 @@ def load_dim_airport(spark, year, month):
             cur.executemany(
                 """
                 INSERT INTO analytics.dim_airport
-                    (airport_id, airport_code, city, state, airport_name)
-                VALUES (%s, %s, %s, %s, %s)
+                    (
+                        airport_id,
+                        airport_code,
+                        city,
+                        state_code,
+                        state,
+                        airport_name
+                    )
+                VALUES (%s, %s, %s, %s, %s, %s)
                 ON CONFLICT (airport_id) DO UPDATE SET
                     airport_code = EXCLUDED.airport_code,
                     city = EXCLUDED.city,
+                    state_code = EXCLUDED.state_code,
                     state = EXCLUDED.state,
                     airport_name = EXCLUDED.airport_name;
                 """,
