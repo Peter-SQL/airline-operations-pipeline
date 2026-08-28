@@ -1,0 +1,58 @@
+services:
+
+  postgres:
+    image: postgres:17
+    container_name: airline-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+    ports:
+      - "5433:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+
+  airflow:
+    build:
+      context: .
+      dockerfile: docker/airflow/Dockerfile
+
+    container_name: airline-airflow
+    restart: unless-stopped
+
+    depends_on:
+      - postgres
+
+    environment:
+      AIRFLOW_HOME: /opt/airflow
+
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: >-
+        postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+      PYTHONPATH: /opt/airflow/project
+
+    volumes:
+      - ./:/opt/airflow/project
+      - ./airflow_dir/dags:/opt/airflow/dags
+
+    working_dir: /opt/airflow/project
+    
+    ports:
+      - "8081:8080"
+
+    command: airflow standalone
+
+
+volumes:
+  postgres_data:
