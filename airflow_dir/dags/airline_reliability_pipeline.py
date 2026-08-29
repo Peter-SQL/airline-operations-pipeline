@@ -36,7 +36,7 @@ default_date = pendulum.now("UTC").subtract(months=2)
 # ---------------------------------------------------------
 
 DEMO_MODE = pendulum.now("Europe/Berlin").date() in {
-    pendulum.date(2026, 8, 29),
+    #pendulum.date(2026, 8, 29),
     pendulum.date(2026, 9, 2),
     pendulum.date(2026, 9, 4),
 }
