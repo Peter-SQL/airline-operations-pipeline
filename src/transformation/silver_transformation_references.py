@@ -4,6 +4,8 @@ from datetime import datetime
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
+from zoneinfo import ZoneInfo
+
 from config.paths import (
     BRONZE_REFERENCE,
     SILVER_REFERENCE,
@@ -167,7 +169,7 @@ def transform_reference(
 
     print(f"Silver reference written to: {output_path}")
 
-    run_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    run_timestamp = datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y-%m-%d %H:%M:%S")
 
     report_lines = [
         "",

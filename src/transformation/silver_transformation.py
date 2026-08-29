@@ -4,6 +4,7 @@ from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from config.paths import (
     BRONZE_FLIGHTS,
@@ -24,6 +25,8 @@ def create_spark_session() -> SparkSession:
     return (
         SparkSession.builder
         .appName("airline-silver-transformation")
+        .master("local[2]")
+        .config("spark.driver.memory", "2g")
         .getOrCreate()
     )
 
@@ -43,6 +46,60 @@ def validate_schema(df) -> None:
         raise ValueError(
             f"Following mandatory columns are missing: {missing_columns}"
         )
+
+# ---------------------------------------------------------
+# Set validation Flags
+# ---------------------------------------------------------
+
+def add_validation_flags (df, year: int, month: int):
+    return (
+
+        df
+
+        # Airport Codes
+        .withColumn("valid_origin_code", F.col("Origin").rlike("^[A-Z]{3}$"))
+        .withColumn("valid_dest_code", F.col("Dest").rlike("^[A-Z]{3}$"))
+
+        # Route
+        .withColumn("valid_route", (F.col("Origin") != F.col("Dest")) | (F.col("Cancelled") == 1) | (F.col("Diverted") == 1))
+
+        # Flags
+        .withColumn("valid_cancelled", F.col("Cancelled").isin(0, 1))
+        .withColumn("valid_diverted", F.col("Diverted").isin(0, 1))
+        .withColumn("valid_depdel15", F.col("DepDel15").isNull() | F.col("DepDel15").isin(0, 1))
+        .withColumn("valid_arrdel15", F.col("ArrDel15").isNull() | F.col("ArrDel15").isin(0, 1))
+
+        # Partition / Datum
+        .withColumn("valid_partition_date", (F.year("FlightDate") == year) & (F.month("FlightDate") == month))
+        .withColumn("valid_year", F.col("Year") == year)
+        .withColumn("valid_month", F.col("Month") == month)
+        .withColumn("valid_quarter", F.col("Quarter").between(1, 4))
+        .withColumn("valid_day_of_month", F.col("DayofMonth").between(1, 31))
+        .withColumn("valid_day_of_week", F.col("DayOfWeek").between(1, 7))
+
+        # Delay Minutes
+        .withColumn("valid_dep_delay_minutes", F.col("DepDelayMinutes").isNull() | (F.col("DepDelayMinutes") >= 0))
+        .withColumn("valid_arr_delay_minutes", F.col("ArrDelayMinutes").isNull() | (F.col("ArrDelayMinutes") >= 0))
+
+        # Taxi-  / flight times
+        .withColumn("valid_taxi_out", F.col("TaxiOut").isNull() | (F.col("TaxiOut") >= 0))
+        .withColumn("valid_taxi_in", F.col("TaxiIn").isNull() | (F.col("TaxiIn") >= 0))
+        .withColumn("valid_crs_elapsed_time", F.col("CRSElapsedTime").isNull() | (F.col("CRSElapsedTime") >= 0))
+        .withColumn("valid_actual_elapsed_time", F.col("ActualElapsedTime").isNull() | (F.col("ActualElapsedTime") >= 0))
+        .withColumn("valid_air_time", F.col("AirTime").isNull() | (F.col("AirTime") >= 0))
+
+        # Distance
+        .withColumn("valid_distance", F.col("Distance").isNull() | (F.col("Distance") > 0))
+
+        # Delay-reasons
+        .withColumn("valid_carrier_delay", F.col("CarrierDelay").isNull() | (F.col("CarrierDelay") >= 0))
+        .withColumn("valid_weather_delay", F.col("WeatherDelay").isNull() | (F.col("WeatherDelay") >= 0))
+        .withColumn("valid_nas_delay", F.col("NASDelay").isNull() | (F.col("NASDelay") >= 0))
+        .withColumn("valid_security_delay", F.col("SecurityDelay").isNull() | (F.col("SecurityDelay") >= 0))
+        .withColumn("valid_late_aircraft_delay", F.col("LateAircraftDelay").isNull() | (F.col("LateAircraftDelay") >= 0))
+    )
+
+
 
 
 def transformation_silver(year: int, month: int) -> None:
@@ -162,55 +219,14 @@ def transformation_silver(year: int, month: int) -> None:
         .withColumn("ArrTimeBlk", F.trim(F.col("ArrTimeBlk")))
         )
 
-        # ---------------------------------------------------------
-        # Set validation Flags
-        # ---------------------------------------------------------
 
-        silver_df = (
-            silver_df
-
-            # Airport Codes
-            .withColumn("valid_origin_code", F.col("Origin").rlike("^[A-Z]{3}$"))
-            .withColumn("valid_dest_code", F.col("Dest").rlike("^[A-Z]{3}$"))
-
-            # Route
-            .withColumn("valid_route", (F.col("Origin") != F.col("Dest")) | (F.col("Cancelled") == 1) | (F.col("Diverted") == 1))
-
-            # Flags
-            .withColumn("valid_cancelled", F.col("Cancelled").isin(0, 1))
-            .withColumn("valid_diverted", F.col("Diverted").isin(0, 1))
-            .withColumn("valid_depdel15", F.col("DepDel15").isNull() | F.col("DepDel15").isin(0, 1))
-            .withColumn("valid_arrdel15", F.col("ArrDel15").isNull() | F.col("ArrDel15").isin(0, 1))
-
-            # Partition / Datum
-            .withColumn("valid_partition_date", (F.year("FlightDate") == year) & (F.month("FlightDate") == month))
-            .withColumn("valid_year", F.col("Year") == year)
-            .withColumn("valid_month", F.col("Month") == month)
-            .withColumn("valid_quarter", F.col("Quarter").between(1, 4))
-            .withColumn("valid_day_of_month", F.col("DayofMonth").between(1, 31))
-            .withColumn("valid_day_of_week", F.col("DayOfWeek").between(1, 7))
-
-            # Delay Minutes
-            .withColumn("valid_dep_delay_minutes", F.col("DepDelayMinutes").isNull() | (F.col("DepDelayMinutes") >= 0))
-            .withColumn("valid_arr_delay_minutes", F.col("ArrDelayMinutes").isNull() | (F.col("ArrDelayMinutes") >= 0))
-
-            # Taxi-  / flight times
-            .withColumn("valid_taxi_out", F.col("TaxiOut").isNull() | (F.col("TaxiOut") >= 0))
-            .withColumn("valid_taxi_in", F.col("TaxiIn").isNull() | (F.col("TaxiIn") >= 0))
-            .withColumn("valid_crs_elapsed_time", F.col("CRSElapsedTime").isNull() | (F.col("CRSElapsedTime") >= 0))
-            .withColumn("valid_actual_elapsed_time", F.col("ActualElapsedTime").isNull() | (F.col("ActualElapsedTime") >= 0))
-            .withColumn("valid_air_time", F.col("AirTime").isNull() | (F.col("AirTime") >= 0))
-
-            # Distance
-            .withColumn("valid_distance", F.col("Distance").isNull() | (F.col("Distance") > 0))
-
-            # Delay-reasons
-            .withColumn("valid_carrier_delay", F.col("CarrierDelay").isNull() | (F.col("CarrierDelay") >= 0))
-            .withColumn("valid_weather_delay", F.col("WeatherDelay").isNull() | (F.col("WeatherDelay") >= 0))
-            .withColumn("valid_nas_delay", F.col("NASDelay").isNull() | (F.col("NASDelay") >= 0))
-            .withColumn("valid_security_delay", F.col("SecurityDelay").isNull() | (F.col("SecurityDelay") >= 0))
-            .withColumn("valid_late_aircraft_delay", F.col("LateAircraftDelay").isNull() | (F.col("LateAircraftDelay") >= 0))
+        silver_df = add_validation_flags(
+            silver_df,
+            year,
+            month,
         )
+
+
 
         # ---------------------------------------------------------
         # Hard Validation
@@ -497,7 +513,7 @@ def transformation_silver(year: int, month: int) -> None:
 
         report_path = report_dir / "validation_report.txt"
 
-        run_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        run_timestamp = datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y-%m-%d %H:%M:%S")
 
         report_lines = [
             "",
