@@ -74,11 +74,19 @@ def create_tables():
         city TEXT,
         state_code VARCHAR(2),
         state TEXT,
-        airport_name TEXT
+        airport_name TEXT,
+        latitude DOUBLE PRECISION,
+        longitude DOUBLE PRECISION
     );
 
     ALTER TABLE analytics.dim_airport
         ADD COLUMN IF NOT EXISTS state_code VARCHAR(2);
+
+    ALTER TABLE analytics.dim_airport
+        ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;
+
+    ALTER TABLE analytics.dim_airport
+        ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
 
     CREATE TABLE IF NOT EXISTS analytics.fact_flight (
         flight_id BIGSERIAL PRIMARY KEY,
@@ -174,14 +182,18 @@ def load_dim_airline(spark, year, month):
 def load_dim_airport(spark, year, month):
     flights_path = flight_path(year, month)
     ref_path = reference_path(year, month, "airport_ids")
+    coordinates_path = reference_path(year, month, "airport_coordinates")
 
     if not flights_path.exists():
         raise FileNotFoundError(f"Silver flights not found: {flights_path}")
     if not ref_path.exists():
         raise FileNotFoundError(f"Silver airport IDs not found: {ref_path}")
+    if not coordinates_path.exists():
+        raise FileNotFoundError(f"Silver airport coordinates not found: {coordinates_path}")
 
     flights = spark.read.parquet(str(flights_path))
     airport_ref = spark.read.parquet(str(ref_path))
+    airport_coordinates = spark.read.parquet(str(coordinates_path))
 
     origin = flights.select(
         F.col("OriginAirportID").cast("integer").alias("airport_id"),
@@ -243,7 +255,20 @@ def load_dim_airport(spark, year, month):
         .dropDuplicates(["airport_id"])
     )
 
-    dim_df = base.join(names, "airport_id", "left")
+    coordinates = (
+        airport_coordinates.select(
+            F.col("AirportID").cast("integer").alias("airport_id"),
+            F.col("Latitude").cast("double").alias("latitude"),
+            F.col("Longitude").cast("double").alias("longitude"),
+        )
+        .dropDuplicates(["airport_id"])
+    )
+
+    dim_df = (
+        base
+        .join(names, "airport_id", "left")
+        .join(coordinates, "airport_id", "left")
+    )
     rows = [tuple(row) for row in dim_df.collect()]
 
     with get_connection() as conn:
@@ -257,15 +282,19 @@ def load_dim_airport(spark, year, month):
                         city,
                         state_code,
                         state,
-                        airport_name
+                        airport_name,
+                        latitude,
+                        longitude
                     )
-                VALUES (%s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (airport_id) DO UPDATE SET
                     airport_code = EXCLUDED.airport_code,
                     city = EXCLUDED.city,
                     state_code = EXCLUDED.state_code,
                     state = EXCLUDED.state,
-                    airport_name = EXCLUDED.airport_name;
+                    airport_name = EXCLUDED.airport_name,
+                    latitude = EXCLUDED.latitude,
+                    longitude = EXCLUDED.longitude;
                 """,
                 rows,
             )

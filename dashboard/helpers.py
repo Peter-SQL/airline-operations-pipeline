@@ -98,31 +98,60 @@ def select_periods(periods):
             i == 0,
         )
 
-    st.sidebar.subheader("Periods")
-
-    c1, c2 = st.sidebar.columns(2)
-    c1.button("All on", on_click=set_selection, args=(options, True))
-    c2.button("All off", on_click=set_selection, args=(options, False))
-
     selected = []
 
-    for year in sorted({year for year, _ in options}, reverse=True):
-        year_options = [p for p in options if p[0] == year]
+    with st.sidebar:
+        with st.container(border=True):
+            st.subheader("Periods")
 
-        st.sidebar.markdown(f"**{year}**")
-        c1, c2 = st.sidebar.columns(2)
-        c1.button("On", key=f"on_{year}",
-                  on_click=set_selection, args=(year_options, True))
-        c2.button("Off", key=f"off_{year}",
-                  on_click=set_selection, args=(year_options, False))
+            c1, c2 = st.columns(2)
 
-        cols = st.sidebar.columns(4)
+            c1.button(
+                "All on",
+                on_click=set_selection,
+                args=(options, True),
+            )
 
-        for i, (year, month) in enumerate(year_options):
-            if cols[i % 4].checkbox(
-                f"{month:02d}",
-                key=f"period_{year}_{month}",
+            c2.button(
+                "All off",
+                on_click=set_selection,
+                args=(options, False),
+            )
+
+            for year in sorted(
+                {year for year, _ in options},
+                reverse=True,
             ):
-                selected.append((year, month))
+                year_options = sorted(
+                    [p for p in options if p[0] == year],
+                    key=lambda p: p[1],
+                )
+
+                st.markdown(f"**{year}**")
+
+                c1, c2 = st.columns(2)
+
+                c1.button(
+                    "On",
+                    key=f"on_{year}",
+                    on_click=set_selection,
+                    args=(year_options, True),
+                )
+
+                c2.button(
+                    "Off",
+                    key=f"off_{year}",
+                    on_click=set_selection,
+                    args=(year_options, False),
+                )
+
+                cols = st.columns(3)
+
+                for i, (year, month) in enumerate(year_options):
+                    if cols[i % 3].checkbox(
+                        f"{month:02d}",
+                        key=f"period_{year}_{month}",
+                    ):
+                        selected.append((year, month))
 
     return selected

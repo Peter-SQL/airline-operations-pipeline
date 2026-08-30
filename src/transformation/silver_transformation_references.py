@@ -1,10 +1,9 @@
 import argparse
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
-
-from zoneinfo import ZoneInfo
 
 from config.paths import (
     BRONZE_REFERENCE,
@@ -65,6 +64,7 @@ def transform_reference(
     year: int,
     month: int,
 ) -> None:
+
     filename = config["filename"]
     code_type = config["code_type"]
     code_name = config["code_name"]
@@ -98,6 +98,7 @@ def transform_reference(
     )
 
     bronze_count = df.count()
+
     validate_schema(df, name)
 
     silver_df = (
@@ -169,7 +170,9 @@ def transform_reference(
 
     print(f"Silver reference written to: {output_path}")
 
-    run_timestamp = datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y-%m-%d %H:%M:%S")
+    run_timestamp = datetime.now(
+        ZoneInfo("Europe/Berlin")
+    ).strftime("%Y-%m-%d %H:%M:%S")
 
     report_lines = [
         "",
@@ -209,6 +212,7 @@ def transform_reference(
     report_dir.mkdir(parents=True, exist_ok=True)
 
     report_path = report_dir / "validation_report.txt"
+
     report_path.write_text(
         report_text,
         encoding="utf-8"
@@ -217,10 +221,117 @@ def transform_reference(
     print(f"Validation report written to: {report_path}")
 
 
+def transform_airport_coordinates(
+    spark: SparkSession,
+    year: int,
+    month: int,
+) -> None:
+
+    input_path = (
+        BRONZE_REFERENCE
+        / "airport_coordinates"
+        / "Master_Coordinate.csv"
+    )
+
+    output_path = (
+        SILVER_REFERENCE
+        / f"year={year}"
+        / f"month={month:02d}"
+        / "airport_coordinates"
+    )
+
+    if not input_path.exists():
+        raise FileNotFoundError(
+            f"Bronze coordinate file not found: {input_path}"
+        )
+
+    df = (
+        spark.read
+        .option("header", True)
+        .option("inferSchema", False)
+        .csv(str(input_path))
+    )
+
+    required_columns = {
+        "AIRPORT_ID",
+        "AIRPORT",
+        "DISPLAY_AIRPORT_NAME",
+        "DISPLAY_AIRPORT_CITY_NAME_FULL",
+        "AIRPORT_STATE_NAME",
+        "LATITUDE",
+        "LONGITUDE",
+        "AIRPORT_IS_LATEST",
+    }
+
+    missing_columns = [
+        column
+        for column in required_columns
+        if column not in df.columns
+    ]
+
+    if missing_columns:
+        raise ValueError(
+            "airport_coordinates: mandatory columns missing: "
+            f"{missing_columns}"
+        )
+
+    valid_df = (
+        df
+        .filter(
+            F.col("AIRPORT_IS_LATEST").cast("integer") == 1
+        )
+        .select(
+            F.col("AIRPORT_ID")
+            .cast("integer")
+            .alias("AirportID"),
+
+            F.upper(
+                F.trim(F.col("AIRPORT"))
+            ).alias("AirportCode"),
+
+            F.trim(
+                F.col("DISPLAY_AIRPORT_NAME")
+            ).alias("AirportName"),
+
+            F.trim(
+                F.col("DISPLAY_AIRPORT_CITY_NAME_FULL")
+            ).alias("AirportCityName"),
+
+            F.trim(
+                F.col("AIRPORT_STATE_NAME")
+            ).alias("AirportStateName"),
+
+            F.col("LATITUDE")
+            .cast("double")
+            .alias("Latitude"),
+
+            F.col("LONGITUDE")
+            .cast("double")
+            .alias("Longitude"),
+        )
+        .filter(F.col("AirportID").isNotNull())
+        .filter(F.col("Latitude").between(-90, 90))
+        .filter(F.col("Longitude").between(-180, 180))
+        .dropDuplicates(["AirportID"])
+    )
+
+    (
+        valid_df
+        .write
+        .mode("overwrite")
+        .parquet(str(output_path))
+    )
+
+    print(
+        f"Silver airport coordinates written to: {output_path}"
+    )
+
+
 def transformation_silver_references(
     year: int,
     month: int,
 ) -> None:
+
     spark = create_spark_session()
 
     try:
@@ -232,6 +343,13 @@ def transformation_silver_references(
                 year=year,
                 month=month,
             )
+
+        transform_airport_coordinates(
+            spark=spark,
+            year=year,
+            month=month,
+        )
+
     finally:
         spark.stop()
 
@@ -256,7 +374,9 @@ def main():
     args = parser.parse_args()
 
     if not 1 <= args.month <= 12:
-        parser.error("Month must be between 1 and 12.")
+        parser.error(
+            "Month must be between 1 and 12."
+        )
 
     transformation_silver_references(
         args.year,

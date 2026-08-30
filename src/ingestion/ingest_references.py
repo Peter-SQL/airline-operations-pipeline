@@ -3,7 +3,8 @@ from pathlib import Path
 import argparse
 import requests
 import csv
-import random, time
+import random
+import time
 
 from config.paths import BRONZE_REFERENCE
 
@@ -12,23 +13,34 @@ REFERENCE_FILES = {
     "airlines": {
         "filename": "L_Airline_ID.csv",
         "url": "https://www.transtats.bts.gov/Download_Lookup.asp?Y11x72=Y_NVeYVaR_VQ",
+        "expected_columns": {"Code", "Description"},
     },
     "airports": {
         "filename": "L_Airport.csv",
         "url": "https://www.transtats.bts.gov/Download_Lookup.asp?Y11x72=Y_NVecbeg",
+        "expected_columns": {"Code", "Description"},
     },
     "airport_ids": {
         "filename": "L_Airport-ID.csv",
         "url": "https://www.transtats.bts.gov/Download_Lookup.asp?Y11x72=Y_NVecbeg_VQ",
+        "expected_columns": {"Code", "Description"},
     },
 }
 
-# These columns should be in the 3 reference tables
-EXPECTED_COLUMNS = {"Code", "Description"}
+
+COORDINATE_COLUMNS = {
+    "AIRPORT_ID",
+    "AIRPORT",
+    "DISPLAY_AIRPORT_NAME",
+    "DISPLAY_AIRPORT_CITY_NAME_FULL",
+    "AIRPORT_STATE_NAME",
+    "LATITUDE",
+    "LONGITUDE",
+    "AIRPORT_IS_LATEST",
+}
 
 
-def validate_csv(path: Path) -> bool:
-
+def validate_csv(path: Path, expected_columns: set[str]) -> bool:
     if not path.exists():
         return False
 
@@ -42,16 +54,14 @@ def validate_csv(path: Path) -> bool:
             if reader.fieldnames is None:
                 return False
 
-            if not EXPECTED_COLUMNS.issubset(set(reader.fieldnames)):
+            if not expected_columns.issubset(set(reader.fieldnames)):
                 raise ValueError(
                     f"Unexpected columns in {path.name}. "
-                    f"Expected at least: {EXPECTED_COLUMNS}. "
+                    f"Expected at least: {expected_columns}. "
                     f"Found: {set(reader.fieldnames)}"
                 )
 
-            first_row = next(reader, None)
-
-            if first_row is None:
+            if next(reader, None) is None:
                 return False
 
     except (UnicodeDecodeError, csv.Error):
@@ -60,17 +70,26 @@ def validate_csv(path: Path) -> bool:
     return True
 
 
-def get_with_retries(url: str, max_retries: int = 5) -> requests.Response:
+def get_with_retries(
+    url: str,
+    max_retries: int = 5,
+) -> requests.Response:
 
     for attempt in range(max_retries):
         try:
-            response = requests.get(url, stream=True, timeout=120)
+            response = requests.get(
+                url,
+                stream=True,
+                timeout=120,
+            )
 
             if response.status_code == 200:
                 return response
 
             elif response.status_code == 404:
-                raise FileNotFoundError(f"File not available: {url}")
+                raise FileNotFoundError(
+                    f"File not available: {url}"
+                )
 
             elif response.status_code == 429:
                 print("Too many requests — retrying later.")
@@ -79,7 +98,9 @@ def get_with_retries(url: str, max_retries: int = 5) -> requests.Response:
                 response.raise_for_status()
 
             elif 500 <= response.status_code < 600:
-                print(f"Server error {response.status_code} — retrying.")
+                print(
+                    f"Server error {response.status_code} — retrying."
+                )
 
         except requests.exceptions.RequestException as e:
             if attempt == max_retries - 1:
@@ -88,11 +109,14 @@ def get_with_retries(url: str, max_retries: int = 5) -> requests.Response:
             print(f"Request failed: {e}")
 
         wait = (2 ** attempt) + random.uniform(0, 1)
+
         print(f"Waiting {wait:.2f}s before retry...")
+
         time.sleep(wait)
 
-    raise RuntimeError(f"All retries exhausted for: {url}")
-
+    raise RuntimeError(
+        f"All retries exhausted for: {url}"
+    )
 
 
 def download_reference_file(
@@ -102,9 +126,9 @@ def download_reference_file(
     month: int,
 ) -> Path:
 
-    
     filename = config["filename"]
     url = config["url"]
+    expected_columns = config["expected_columns"]
 
     target_dir = (
         BRONZE_REFERENCE
@@ -116,54 +140,61 @@ def download_reference_file(
     target_path = target_dir / filename
 
     if target_path.exists():
-        if validate_csv(target_path):
+        if validate_csv(
+            target_path,
+            expected_columns,
+        ):
             print(f"Already exists: {target_path}")
             return target_path
 
         target_path.unlink()
 
-    print(
-        f"Downloading: {url}",
-        flush=True
-    )
+    print(f"Downloading: {url}", flush=True)
 
-    
     response = get_with_retries(url)
-   
-    # Only create folder if needed file is found
-    target_dir.mkdir(parents=True, exist_ok=True)
+
+    target_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
     with open(target_path, "wb") as file:
         file.write(response.content)
 
     try:
-        if not validate_csv(target_path):
+        if not validate_csv(
+            target_path,
+            expected_columns,
+        ):
             raise ValueError(
                 f"Invalid CSV file: {target_path}"
             )
-        
+
     except ValueError:
         target_path.unlink(missing_ok=True)
-        raise 
-
+        raise
 
     print(f"Validated and saved: {target_path}")
 
     return target_path
 
 
-
 def main():
+
     parser = argparse.ArgumentParser(
         description="Download BTS reference data to Bronze"
     )
 
     parser.add_argument(
-        "--year", type=int, required=True
+        "--year",
+        type=int,
+        required=True,
     )
 
     parser.add_argument(
-        "--month", type=int, required=True
+        "--month",
+        type=int,
+        required=True,
     )
 
     args = parser.parse_args()
@@ -179,19 +210,36 @@ def main():
     for name, config in REFERENCE_FILES.items():
         try:
             download_reference_file(
-                name=name, config=config, year=year, month=month,
+                name=name,
+                config=config,
+                year=year,
+                month=month,
             )
 
         except Exception as e:
-            print(
-                f"{name}: FAILED - {e}"
-            )
+            print(f"{name}: FAILED - {e}")
             raise
 
         else:
-            print(
-                f"{name}: OK"
-            )
+            print(f"{name}: OK")
+
+    coordinate_path = (
+        BRONZE_REFERENCE
+        / "airport_coordinates"
+        / "Master_Coordinate.csv"
+    )
+
+    if not validate_csv(
+        coordinate_path,
+        COORDINATE_COLUMNS,
+    ):
+        raise ValueError(
+            f"Invalid or missing Master Coordinate CSV: {coordinate_path}"
+        )
+
+    print(
+        f"airport_coordinates: OK - {coordinate_path}"
+    )
 
 
 if __name__ == "__main__":
