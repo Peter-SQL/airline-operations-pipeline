@@ -1,13 +1,32 @@
 import streamlit as st
 
 from dashboard.data import load_gold_data
+from dashboard.helpers import aggregate_periods
 
 
-def show_airports(year, month):
+def show_airports(periods):
     df = load_gold_data(
         "airports",
-        year,
-        month,
+        periods,
+    )
+
+    df = aggregate_periods(
+        df,
+        [
+            "airport_id",
+            "airport_code",
+            "airport_name",
+            "city",
+            "state_code",
+            "state",
+            "operation",
+        ],
+        [
+            "avg_delay_minutes",
+            "on_time_rate_pct",
+            "cancellation_rate_pct",
+            "diversion_rate_pct",
+        ],
     )
 
     st.header("Airport Reliability")
@@ -79,6 +98,6 @@ def show_airports(year, month):
 
     st.dataframe(
         filtered,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )

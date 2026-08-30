@@ -1,13 +1,40 @@
 import streamlit as st
 
 from dashboard.data import load_gold_data
+from dashboard.helpers import aggregate_periods
 
 
-def show_flights(year, month):
+def show_flights(periods):
     df = load_gold_data(
         "flights",
-        year,
-        month,
+        periods,
+    )
+
+    df = aggregate_periods(
+        df,
+        [
+            "airline_id",
+            "airline_name",
+            "airline_code",
+            "flight_number",
+            "origin_airport_id",
+            "origin_airport_code",
+            "origin_city",
+            "origin_state_code",
+            "origin_state",
+            "dest_airport_id",
+            "dest_airport_code",
+            "dest_city",
+            "dest_state_code",
+            "dest_state",
+        ],
+        [
+            "avg_dep_delay_minutes",
+            "avg_arr_delay_minutes",
+            "on_time_rate_pct",
+            "cancellation_rate_pct",
+            "diversion_rate_pct",
+        ],
     )
 
     st.header("Flight Reliability")
@@ -67,6 +94,6 @@ def show_flights(year, month):
 
     st.dataframe(
         filtered,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )

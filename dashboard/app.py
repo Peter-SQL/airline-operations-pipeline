@@ -1,6 +1,7 @@
 import streamlit as st
 
 from dashboard.data import load_periods
+from dashboard.helpers import select_periods
 from dashboard.views.airlines import show_airlines
 from dashboard.views.airports import show_airports
 from dashboard.views.routes import show_routes
@@ -21,66 +22,22 @@ if periods.empty:
     st.warning("No Gold data available.")
     st.stop()
 
-years = sorted(
-    periods["year"].astype(int).unique(),
-    reverse=True,
-)
+selected_periods = select_periods(periods)
 
-selected_year = st.sidebar.selectbox(
-    "Year",
-    years,
-)
+if not selected_periods:
+    st.warning("Select at least one period.")
+    st.stop()
 
-months = sorted(
-    periods.loc[
-        periods["year"] == selected_year,
-        "month",
-    ]
-    .astype(int)
-    .unique(),
-    reverse=True,
-)
+tabs = st.tabs(["Airlines", "Airports", "Routes", "Flights"])
 
-selected_month = st.sidebar.selectbox(
-    "Month",
-    months,
-)
+with tabs[0]:
+    show_airlines(selected_periods)
 
-st.sidebar.markdown("---")
-st.sidebar.write(
-    f"Selected period: "
-    f"**{selected_year}-{selected_month:02d}**"
-)
+with tabs[1]:
+    show_airports(selected_periods)
 
-tab_airlines, tab_airports, tab_routes, tab_flights = st.tabs(
-    [
-        "Airlines",
-        "Airports",
-        "Routes",
-        "Flights",
-    ]
-)
+with tabs[2]:
+    show_routes(selected_periods)
 
-with tab_airlines:
-    show_airlines(
-        selected_year,
-        selected_month,
-    )
-
-with tab_airports:
-    show_airports(
-        selected_year,
-        selected_month,
-    )
-
-with tab_routes:
-    show_routes(
-        selected_year,
-        selected_month,
-    )
-
-with tab_flights:
-    show_flights(
-        selected_year,
-        selected_month,
-    )
+with tabs[3]:
+    show_flights(selected_periods)
