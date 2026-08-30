@@ -155,3 +155,77 @@ def select_periods(periods):
                         selected.append((year, month))
 
     return selected
+
+def select_kpi_period(periods, selected_periods, prefix, title):
+    available = sorted(
+        (int(y), int(m))
+        for y, m in periods[["year", "month"]].values
+    )
+    if not available:
+        return []
+
+    selected = sorted(
+        (int(y), int(m))
+        for y, m in selected_periods
+    )
+    start_default = (
+        selected[0]
+        if selected and selected[0] in available
+        else available[0]
+    )
+    end_default = (
+        selected[-1]
+        if selected and selected[-1] in available
+        else available[-1]
+    )
+    labels = [f"{y}-{m:02d}" for y, m in available]
+
+    start_key = f"{prefix}_kpi_start"
+    end_key = f"{prefix}_kpi_end"
+    widget_start = f"_{start_key}"
+    widget_end = f"_{end_key}"
+
+    if (
+        start_key not in st.session_state
+        or st.session_state[start_key] not in labels
+    ):
+        st.session_state[start_key] = (
+            f"{start_default[0]}-{start_default[1]:02d}"
+        )
+    if (
+        end_key not in st.session_state
+        or st.session_state[end_key] not in labels
+    ):
+        st.session_state[end_key] = (
+            f"{end_default[0]}-{end_default[1]:02d}"
+        )
+
+    st.session_state[widget_start] = st.session_state[start_key]
+    st.session_state[widget_end] = st.session_state[end_key]
+
+    def save_period():
+        st.session_state[start_key] = st.session_state[widget_start]
+        st.session_state[end_key] = st.session_state[widget_end]
+
+    with st.sidebar:
+        with st.container(border=True):
+            st.subheader(title)
+            st.caption("Independent period selection")
+            start = st.selectbox(
+                "Start", labels,
+                key=widget_start,
+                on_change=save_period,
+            )
+            end = st.selectbox(
+                "End", labels,
+                key=widget_end,
+                on_change=save_period,
+            )
+
+    start = int(start.replace("-", ""))
+    end = int(end.replace("-", ""))
+
+    return [
+        p for p in available
+        if start <= p[0] * 100 + p[1] <= end
+    ]

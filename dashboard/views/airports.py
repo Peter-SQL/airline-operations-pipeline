@@ -2,13 +2,12 @@ import pandas as pd
 import streamlit as st
 
 from dashboard.data import load_gold_data, load_periods
-from dashboard.helpers import aggregate_periods
+from dashboard.helpers import aggregate_periods, select_kpi_period
 from dashboard.views.airport_charts import show_comparison, show_map
 from dashboard.views.airport_timeseries import show_timeseries
 from dashboard.views.airport_ui import (
     WEIGHTED_COLUMNS,
     add_all_airports,
-    select_airport_trend_period,
     show_airport_details,
     show_kpis,
 )
@@ -78,7 +77,7 @@ def show_airports(periods):
         operation,
     )
 
-    selected_airports = show_airport_details(
+    show_airport_details(
         all_df,
         df,
         operation,
@@ -86,9 +85,11 @@ def show_airports(periods):
 
     st.subheader("KPI Development")
 
-    trend_periods = select_airport_trend_period(
+    trend_periods = select_kpi_period(
         load_periods(),
         periods,
+        "airport",
+        "Airport KPI Development",
     )
 
     if not trend_periods:
@@ -104,17 +105,10 @@ def show_airports(periods):
         monthly_trend["operation"] == operation
     ].copy()
 
-    if st.session_state.get("airport_limit") == "Specific":
-        selected = st.session_state.get(
-            "airport_specific_selection",
-            [],
-        )
-    else:
-        selected = [
-            airport
-            for airport in selected_airports
-            if airport != "All Airports"
-        ]
+    selected = st.session_state.get(
+        "airport_comparison_selection",
+        [],
+    )
 
     trend_df = monthly_trend[
         monthly_trend["airport_code"].isin(selected)

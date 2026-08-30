@@ -1,6 +1,6 @@
 import altair as alt
 import pandas as pd
-import pydeck as pdk
+import plotly.graph_objects as go
 import streamlit as st
 
 
@@ -70,9 +70,13 @@ def show_comparison(all_df, df, color_domain, operation):
     airports = df.copy()
 
     if specific_mode:
-        selected = st.session_state.get("airport_selected", [])
+        selected = st.session_state.get(
+            "airport_specific_selection",
+            st.session_state.get("airport_selected", []),
+        )
 
         if not selected:
+            st.session_state["airport_comparison_selection"] = []
             st.info("Select one or more airports below.")
             return
 
@@ -104,7 +108,6 @@ def show_comparison(all_df, df, color_domain, operation):
         airports = airports.sort_values(
             ["city", "airport_code"]
         )
-
     else:
         airports = airports.sort_values(
             column,
@@ -115,6 +118,10 @@ def show_comparison(all_df, df, color_domain, operation):
         airports = airports.head(
             20 if show == "Top 20" else 50
         )
+
+    st.session_state["airport_comparison_selection"] = (
+        airports["airport_code"].tolist()
+    )
 
     if metric != "Flights":
         all_row = all_df[
@@ -142,12 +149,10 @@ def show_comparison(all_df, df, color_domain, operation):
                 labelLimit=170,
             ),
         ),
-
         y=alt.Y(
             f"{column}:Q",
             title=Y_LABELS[metric],
         ),
-
         color=alt.condition(
             alt.datum.display_code == "All Airports",
             alt.value("#FFD700"),
@@ -159,19 +164,16 @@ def show_comparison(all_df, df, color_domain, operation):
                 legend=None,
             ),
         ),
-
         stroke=alt.condition(
             alt.datum.display_code == "All Airports",
             alt.value("#000000"),
             alt.value(None),
         ),
-
         strokeWidth=alt.condition(
             alt.datum.display_code == "All Airports",
             alt.value(6),
             alt.value(0),
         ),
-
         tooltip=[
             alt.Tooltip(
                 "display_code:N",
@@ -244,7 +246,11 @@ def show_map(df, operation):
     specific_mode = (
         st.session_state.get("airport_limit") == "Specific"
     )
-    selected = st.session_state.get("airport_selected", [])
+
+    selected = st.session_state.get(
+        "airport_specific_selection",
+        st.session_state.get("airport_selected", []),
+    )
 
     if specific_mode and selected:
         map_df = map_df[
@@ -256,20 +262,35 @@ def show_map(df, operation):
         return
 
     def reliability_color(value):
-        red = [220, 60, 60, 210]
-        yellow = [240, 190, 40, 210]
-        green = [60, 170, 70, 210]
-
         if metric == "On-Time":
-            return green if value >= 80 else yellow if value >= 70 else red
-        if metric == "Avg. Delay":
-            return green if value <= 15 else yellow if value <= 25 else red
-        if metric == "Cancellation":
-            return green if value <= 1 else yellow if value <= 3 else red
-        if metric == "Diversion":
-            return green if value <= 0.5 else yellow if value <= 1 else red
+            return (
+                "green" if value >= 80
+                else "gold" if value >= 70
+                else "red"
+            )
 
-        return yellow
+        if metric == "Avg. Delay":
+            return (
+                "green" if value <= 15
+                else "gold" if value <= 25
+                else "red"
+            )
+
+        if metric == "Cancellation":
+            return (
+                "green" if value <= 1
+                else "gold" if value <= 3
+                else "red"
+            )
+
+        if metric == "Diversion":
+            return (
+                "green" if value <= 0.5
+                else "gold" if value <= 1
+                else "red"
+            )
+
+        return "gold"
 
     map_df["map_color"] = map_df[column].apply(
         reliability_color
@@ -277,91 +298,74 @@ def show_map(df, operation):
 
     max_flights = map_df["flights"].max()
 
-    map_df["radius"] = (
-        map_df["flights"] / max_flights * 40000 + 5000
-        if max_flights > 0 else 5000
+    map_df["marker_size"] = (
+        map_df["flights"] / max_flights * 30 + 8
+        if max_flights > 0 else 8
     )
 
-    map_df["flights_display"] = map_df["flights"].map(
-        lambda x: f"{x:,.0f}"
+    map_df["display_airport"] = (
+        map_df["city"].fillna("")
+        + " (" + map_df["airport_code"] + ")"
     )
 
-    map_df["on_time_display"] = map_df[
-        "on_time_rate_pct"
-    ].map(
-        lambda x: f"{x:.2f}"
-    )
+    customdata = map_df[
+        [
+            "airport_name",
+            "state_code",
+            "flights",
+            "on_time_rate_pct",
+            "avg_delay_minutes",
+        ]
+    ].to_numpy()
 
-    map_df["delay_display"] = map_df[
-        "avg_delay_minutes"
-    ].map(
-        lambda x: f"{x:.2f}"
-    )
-
-    reset = st.button(
-        "↺ Reset map",
-        key="airport_map_center",
-    )
-
-    latitude, longitude, zoom = 39.5, -98.35, 3
-
-    if specific_mode and selected and not reset:
-        latitude = map_df["latitude"].mean()
-        longitude = map_df["longitude"].mean()
-
-        span = max(
-            map_df["latitude"].max() - map_df["latitude"].min(),
-            map_df["longitude"].max() - map_df["longitude"].min(),
+    fig = go.Figure(
+        go.Scattermap(
+            lat=map_df["latitude"],
+            lon=map_df["longitude"],
+            mode="markers",
+            text=map_df["display_airport"],
+            customdata=customdata,
+            marker={
+                "size": map_df["marker_size"],
+                "color": map_df["map_color"],
+                "opacity": 0.75,
+            },
+            hovertemplate=(
+                "<b>%{text}</b><br>"
+                "%{customdata[0]}<br>"
+                "%{customdata[1]}<br>"
+                "Flights: %{customdata[2]:,.0f}<br>"
+                "On-Time: %{customdata[3]:.2f}%<br>"
+                "Avg. Delay: %{customdata[4]:.2f} min"
+                "<extra></extra>"
+            ),
         )
-
-        if span < 3:
-            zoom = 7
-        elif span < 7:
-            zoom = 6
-        elif span < 15:
-            zoom = 5
-        elif span < 30:
-            zoom = 4
-
-    layer = pdk.Layer(
-        "ScatterplotLayer",
-        data=map_df,
-        get_position="[longitude, latitude]",
-        get_radius="radius",
-        get_fill_color="map_color",
-        pickable=True,
-        auto_highlight=True,
     )
 
-    tooltip = {
-        "html": (
-            "<b>{city} ({airport_code})</b><br/>"
-            "{airport_name}<br/>"
-            "{state_code}<br/>"
-            "Flights: {flights_display}<br/>"
-            "On-Time: {on_time_display}%<br/>"
-            "Avg. Delay: {delay_display} min"
-        )
-    }
-
-    if reset:
-        st.session_state["airport_map_reset"] = (
-            st.session_state.get("airport_map_reset", 0) + 1
-        )
-
-    deck = pdk.Deck(
-        layers=[layer],
-        initial_view_state=pdk.ViewState(
-            latitude=latitude,
-            longitude=longitude,
-            zoom=zoom,
-        ),
-        map_style="light",
-        tooltip=tooltip,
+    fig.update_layout(
+        map={
+            "style": "open-street-map",
+            "center": {
+                "lat": 39.5,
+                "lon": -98.35,
+            },
+            "zoom": 2.8,
+        },
+        height=600,
+        margin={
+            "l": 0,
+            "r": 0,
+            "t": 0,
+            "b": 0,
+        },
+        showlegend=False,
     )
 
-    st.pydeck_chart(
-        deck,
-        width="stretch",
-        key=f"airport_map_{st.session_state.get('airport_map_reset', 0)}",
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config={
+            "scrollZoom": False,
+            "displaylogo": False,
+        },
     )
