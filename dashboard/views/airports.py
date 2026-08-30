@@ -32,7 +32,9 @@ def show_airports(periods):
         st.info("No airport data available.")
         return
 
-    operations = sorted(monthly_df["operation"].dropna().unique())
+    operations = sorted(
+        monthly_df["operation"].dropna().unique()
+    )
 
     operation = st.radio(
         "Operation",
@@ -61,19 +63,25 @@ def show_airports(periods):
     show_kpis(
         all_df.iloc[0],
         df["airport_id"].nunique(),
+        operation,
     )
 
     show_comparison(
         all_df,
         df,
         color_domain,
+        operation,
     )
 
-    show_map(df)
+    show_map(
+        df,
+        operation,
+    )
 
     selected_airports = show_airport_details(
         all_df,
         df,
+        operation,
     )
 
     st.subheader("KPI Development")
@@ -96,11 +104,17 @@ def show_airports(periods):
         monthly_trend["operation"] == operation
     ].copy()
 
-    selected = [
-        airport
-        for airport in selected_airports
-        if airport != "All Airports"
-    ]
+    if st.session_state.get("airport_limit") == "Specific":
+        selected = st.session_state.get(
+            "airport_specific_selection",
+            [],
+        )
+    else:
+        selected = [
+            airport
+            for airport in selected_airports
+            if airport != "All Airports"
+        ]
 
     trend_df = monthly_trend[
         monthly_trend["airport_code"].isin(selected)
@@ -113,6 +127,7 @@ def show_airports(periods):
     )
 
     all_airports["airport_code"] = "All Airports"
+    all_airports["city"] = "All Airports"
 
     trend_df = pd.concat(
         [all_airports, trend_df],
@@ -122,4 +137,5 @@ def show_airports(periods):
     show_timeseries(
         trend_df,
         color_domain,
+        operation,
     )

@@ -28,16 +28,29 @@ if not selected_periods:
     st.warning("Select at least one period.")
     st.stop()
 
-tabs = st.tabs(["Airlines", "Airports", "Routes", "Flights"])
+for key in [
+    "airline_kpi_start", "airline_kpi_end",
+    "airport_kpi_start", "airport_kpi_end",
+]:
+    saved = f"saved_{key}"
+    if key in st.session_state:
+        st.session_state[saved] = st.session_state[key]
+    elif saved in st.session_state:
+        st.session_state[key] = st.session_state[saved]
 
-with tabs[0]:
+view = st.segmented_control(
+    "View",
+    ["Airlines", "Airports", "Routes", "Flights"],
+    default="Airlines",
+    key="dashboard_view",
+    label_visibility="collapsed",
+)
+
+if view == "Airlines":
     show_airlines(selected_periods)
-
-with tabs[1]:
+elif view == "Airports":
     show_airports(selected_periods)
-
-with tabs[2]:
+elif view == "Routes":
     show_routes(selected_periods)
-
-with tabs[3]:
+else:
     show_flights(selected_periods)
