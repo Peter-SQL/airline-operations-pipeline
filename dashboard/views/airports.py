@@ -1,103 +1,125 @@
+import pandas as pd
 import streamlit as st
 
-from dashboard.data import load_gold_data
+from dashboard.data import load_gold_data, load_periods
 from dashboard.helpers import aggregate_periods
+from dashboard.views.airport_charts import show_comparison, show_map
+from dashboard.views.airport_timeseries import show_timeseries
+from dashboard.views.airport_ui import (
+    WEIGHTED_COLUMNS,
+    add_all_airports,
+    select_airport_trend_period,
+    show_airport_details,
+    show_kpis,
+)
+
+
+GROUP_COLUMNS = [
+    "airport_id", "airport_code", "airport_name", "city",
+    "state_code", "state", "latitude", "longitude",
+]
 
 
 def show_airports(periods):
-    df = load_gold_data(
-        "airports",
-        periods,
+    monthly_df = load_gold_data("airports", periods)
+
+    st.header(
+        "Airport Reliability in total for selected "
+        + ("period" if len(periods) == 1 else "periods")
     )
 
-    df = aggregate_periods(
-        df,
-        [
-            "airport_id",
-            "airport_code",
-            "airport_name",
-            "city",
-            "state_code",
-            "state",
-            "operation",
-        ],
-        [
-            "avg_delay_minutes",
-            "on_time_rate_pct",
-            "cancellation_rate_pct",
-            "diversion_rate_pct",
-        ],
-    )
-
-    st.header("Airport Reliability")
-
-    if df.empty:
+    if monthly_df.empty:
         st.info("No airport data available.")
         return
 
-    operations = sorted(
-        df["operation"]
-        .dropna()
-        .unique()
-    )
+    operations = sorted(monthly_df["operation"].dropna().unique())
 
-    selected_operation = st.selectbox(
+    operation = st.radio(
         "Operation",
         operations,
+        horizontal=True,
+        key="airport_operation",
     )
 
-    filtered = df[
-        df["operation"] == selected_operation
+    monthly_df = monthly_df[
+        monthly_df["operation"] == operation
     ].copy()
 
-    col1, col2, col3 = st.columns(3)
-
-    col1.metric(
-        "Airports",
-        filtered["airport_id"].nunique(),
+    df = aggregate_periods(
+        monthly_df,
+        GROUP_COLUMNS,
+        WEIGHTED_COLUMNS,
     )
 
-    col2.metric(
-        "Flights",
-        f"{filtered['flights'].sum():,.0f}",
+    all_df = add_all_airports(df)
+
+    color_domain = [
+        "All Airports",
+        *sorted(df["airport_code"].dropna().unique()),
+    ]
+
+    show_kpis(
+        all_df.iloc[0],
+        df["airport_id"].nunique(),
     )
 
-    weighted_on_time = (
-        (
-            filtered["on_time_rate_pct"]
-            * filtered["flights"]
-        ).sum()
-        / filtered["flights"].sum()
+    show_comparison(
+        all_df,
+        df,
+        color_domain,
     )
 
-    col3.metric(
-        "Overall On-Time Rate",
-        f"{weighted_on_time:.1f} %",
+    show_map(df)
+
+    selected_airports = show_airport_details(
+        all_df,
+        df,
     )
 
-    st.subheader("Top 20 Airports by On-Time Rate")
+    st.subheader("KPI Development")
 
-    chart_df = (
-        filtered[
-            [
-                "airport_code",
-                "on_time_rate_pct",
-            ]
-        ]
-        .sort_values(
-            "on_time_rate_pct",
-            ascending=False,
-        )
-        .head(20)
-        .set_index("airport_code")
+    trend_periods = select_airport_trend_period(
+        load_periods(),
+        periods,
     )
 
-    st.bar_chart(chart_df)
+    if not trend_periods:
+        st.warning("End must not be before Start.")
+        return
 
-    st.subheader("Airport Data")
+    monthly_trend = load_gold_data(
+        "airports",
+        trend_periods,
+    )
 
-    st.dataframe(
-        filtered,
-        width="stretch",
-        hide_index=True,
+    monthly_trend = monthly_trend[
+        monthly_trend["operation"] == operation
+    ].copy()
+
+    selected = [
+        airport
+        for airport in selected_airports
+        if airport != "All Airports"
+    ]
+
+    trend_df = monthly_trend[
+        monthly_trend["airport_code"].isin(selected)
+    ].copy()
+
+    all_airports = aggregate_periods(
+        monthly_trend,
+        ["year", "month"],
+        WEIGHTED_COLUMNS,
+    )
+
+    all_airports["airport_code"] = "All Airports"
+
+    trend_df = pd.concat(
+        [all_airports, trend_df],
+        ignore_index=True,
+    )
+
+    show_timeseries(
+        trend_df,
+        color_domain,
     )

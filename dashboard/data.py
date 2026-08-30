@@ -1,7 +1,6 @@
 import pandas as pd
 import streamlit as st
 from sqlalchemy import text
-
 from dashboard.db import get_engine
 
 
@@ -13,7 +12,7 @@ GOLD_TABLES = {
 }
 
 
-@st.cache_data
+
 def load_periods():
     query = text("""
         SELECT DISTINCT
@@ -35,22 +34,33 @@ def load_gold_data(dataset, periods):
         raise ValueError(f"Unknown Gold dataset: {dataset}")
 
     table_name = GOLD_TABLES[dataset]
-
     conditions = []
     params = {}
 
     for i, (year, month) in enumerate(periods):
         conditions.append(
-            f"(year = :year_{i} AND month = :month_{i})"
+            f"(g.year = :year_{i} AND g.month = :month_{i})"
         )
         params[f"year_{i}"] = year
         params[f"month_{i}"] = month
 
-    query = text(f"""
-        SELECT *
-        FROM analytics.{table_name}
-        WHERE {" OR ".join(conditions)}
-    """)
+    if dataset == "airports":
+        query = text(f"""
+            SELECT
+                g.*,
+                d.latitude,
+                d.longitude
+            FROM analytics.{table_name} g
+            LEFT JOIN analytics.dim_airport d
+                ON g.airport_id = d.airport_id
+            WHERE {" OR ".join(conditions)}
+        """)
+    else:
+        query = text(f"""
+            SELECT g.*
+            FROM analytics.{table_name} g
+            WHERE {" OR ".join(conditions)}
+        """)
 
     return pd.read_sql_query(
         query,
