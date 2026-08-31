@@ -112,10 +112,10 @@ def show_timeseries(df, color_domain):
     mask = df["route"] != "All Routes"
 
     df.loc[mask, "display_route"] = (
-        df.loc[mask, "origin_city"].fillna("")
-        + " (" + df.loc[mask, "origin_airport_code"] + ") → "
-        + df.loc[mask, "dest_city"].fillna("")
-        + " (" + df.loc[mask, "dest_airport_code"] + ")"
+        df.loc[mask, "origin_city"].astype("string").fillna("")
+        + " (" + df.loc[mask, "origin_airport_code"].astype("string").fillna("") + ") → "
+        + df.loc[mask, "dest_city"].astype("string").fillna("")
+        + " (" + df.loc[mask, "dest_airport_code"].astype("string").fillna("") + ")"
     )
 
     route_labels = (

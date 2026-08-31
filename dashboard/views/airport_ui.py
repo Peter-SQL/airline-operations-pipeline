@@ -35,19 +35,44 @@ def add_all_airports(df):
     flights = df["flights"].sum()
 
     total = {
-        "airport_id": None, "airport_code": "n/a",
-        "airport_name": "All Airports", "city": "All Airports",
-        "state_code": None, "state": None,
-        "latitude": None, "longitude": None, "flights": flights,
+        "airport_id": None,
+        "airport_code": "n/a",
+        "airport_name": "All Airports",
+        "city": "All Airports",
+        "state_code": None,
+        "state": None,
+        "latitude": None,
+        "longitude": None,
+        "flights": flights,
     }
 
-    for col in WEIGHTED_COLUMNS:
-        total[col] = (
-            (df[col] * df["flights"]).sum() / flights
-            if flights else 0
-        )
+    if "delay_flights" in df.columns:
+        total["delay_flights"] = df["delay_flights"].sum()
 
-    return pd.concat([pd.DataFrame([total]), df], ignore_index=True)
+    if "delay_sum_minutes" in df.columns:
+        total["delay_sum_minutes"] = df["delay_sum_minutes"].sum()
+
+    for col in WEIGHTED_COLUMNS:
+        if (
+            col == "avg_delay_minutes"
+            and "delay_flights" in df.columns
+            and "delay_sum_minutes" in df.columns
+        ):
+            delay_flights = total["delay_flights"]
+            total[col] = (
+                total["delay_sum_minutes"] / delay_flights
+                if delay_flights else 0
+            )
+        else:
+            total[col] = (
+                (df[col] * df["flights"]).sum() / flights
+                if flights else 0
+            )
+
+    return pd.concat(
+        [pd.DataFrame([total]), df],
+        ignore_index=True,
+    )
 
 
 def set_all_airports(airports, value):

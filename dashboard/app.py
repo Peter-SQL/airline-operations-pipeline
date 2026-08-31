@@ -30,7 +30,8 @@ if not selected_periods:
 
 view = st.segmented_control(
     "View",
-    ["Airlines", "Airports", "Routes", "Flights"],
+    ["Airlines", "Airports", "Routes"],
+  #  ["Airlines", "Airports", "Routes", "Flights"],    
     default="Airlines",
     key="dashboard_view",
     label_visibility="collapsed",
