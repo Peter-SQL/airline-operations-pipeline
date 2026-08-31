@@ -10,11 +10,11 @@ COLORS = [
 
 METRICS = {
     "On-Time": "on_time_rate_pct",
-    "Flights": "flights",
     "Dep. Delay": "avg_dep_delay_minutes",
     "Arr. Delay": "avg_arr_delay_minutes",
     "Cancellation": "cancellation_rate_pct",
     "Diversion": "diversion_rate_pct",
+    "Flights": "flights",
 }
 
 Y_LABELS = {
@@ -29,30 +29,43 @@ Y_LABELS = {
 
 def get_color_range(domain):
     colors = COLORS[:len(domain)].copy()
+
     american = next(
         (i for i, name in enumerate(domain) if name.startswith("American Airlines")),
         None,
     )
+
     spirit = next(
         (i for i, name in enumerate(domain) if name.startswith("Spirit Air")),
         None,
     )
+
     if american is not None and spirit is not None:
         colors[american], colors[spirit] = colors[spirit], colors[american]
+
     return colors
 
 
 def show_comparison(all_df, df, color_domain):
     st.subheader("Airline Comparison")
 
-    metric = st.radio("Choose metric", METRICS, horizontal=True)
+    metric = st.radio(
+        "Choose metric",
+        list(METRICS),
+        index=len(METRICS) - 1,
+        horizontal=True,
+        key="airline_metric",
+    )
+
     sort_by = st.radio(
         "Sort by",
-        ["Metric", "Airline name"],
+        ["Metric", "Airline Name"],
         horizontal=True,
+        key="airline_sort",
     )
 
     column = METRICS[metric]
+
     chart_df = all_df.copy()
 
     if st.session_state.get("comparison_filter", False):
@@ -61,6 +74,7 @@ def show_comparison(all_df, df, color_domain):
             for airline in df["airline_name"].dropna()
             if st.session_state.get(f"airline_{airline}", True)
         ]
+
         chart_df = chart_df[
             chart_df["airline_name"].isin(selected + ["All Airlines"])
         ]
@@ -70,10 +84,11 @@ def show_comparison(all_df, df, color_domain):
             chart_df["airline_name"] != "All Airlines"
         ]
 
-    if sort_by == "Airline name":
+    if sort_by == "Airline Name":
         all_row = chart_df[
             chart_df["airline_name"] == "All Airlines"
         ]
+
         chart_df = chart_df[
             chart_df["airline_name"] != "All Airlines"
         ].sort_values("airline_name")
@@ -85,11 +100,17 @@ def show_comparison(all_df, df, color_domain):
             [all_row, chart_df, all_row_end],
             ignore_index=True,
         )
+
     else:
-        chart_df = chart_df.sort_values(column, ascending=False)
+        chart_df = chart_df.sort_values(
+            column,
+            ascending=False,
+        )
 
     chart_df["Color"] = chart_df["airline_name"].str.strip()
+
     chart_order = chart_df["airline_name"].tolist()
+
     colors = get_color_range(color_domain)
 
     bars = (
@@ -106,7 +127,10 @@ def show_comparison(all_df, df, color_domain):
                     labelLimit=200,
                 ),
             ),
-            y=alt.Y(f"{column}:Q", title=Y_LABELS[metric]),
+            y=alt.Y(
+                f"{column}:Q",
+                title=Y_LABELS[metric],
+            ),
             color=alt.Color(
                 "Color:N",
                 title="Airline",
@@ -126,7 +150,10 @@ def show_comparison(all_df, df, color_domain):
                 alt.value(0),
             ),
             tooltip=[
-                alt.Tooltip("Color:N", title="Airline"),
+                alt.Tooltip(
+                    "Color:N",
+                    title="Airline",
+                ),
                 alt.Tooltip(
                     f"{column}:Q",
                     title=Y_LABELS[metric],
@@ -150,12 +177,18 @@ def show_comparison(all_df, df, color_domain):
             color="black",
         )
         .encode(
-            x=alt.X("airline_name:N", sort=chart_order),
+            x=alt.X(
+                "airline_name:N",
+                sort=chart_order,
+            ),
             y=alt.Y(f"{column}:Q"),
         )
     )
 
     st.altair_chart(
-        alt.layer(bars, marker).properties(height=400),
+        alt.layer(
+            bars,
+            marker,
+        ).properties(height=400),
         width="stretch",
     )

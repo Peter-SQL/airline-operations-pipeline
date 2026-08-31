@@ -28,32 +28,95 @@ Y_LABELS = {
 
 
 def color_range(domain):
-    return [COLORS[i % len(COLORS)] for i in range(len(domain))]
+    colors = []
+    airport_index = 0
+
+    for value in domain:
+        if value == "All Airports":
+            colors.append(COLORS[0])
+        else:
+            colors.append(
+                COLORS[
+                    1 + airport_index % (len(COLORS) - 1)
+                ]
+            )
+            airport_index += 1
+
+    return colors
 
 
 def show_comparison(all_df, df, color_domain, operation):
     st.subheader("Airport Comparison")
 
-    metrics = ["On-Time", "Flights", "Avg. Delay"]
+    metrics = [
+        "On-Time",
+        "Avg. Delay",
+        "Cancellation",
+        "Diversion",
+        "Flights",
+    ]
 
-    if not str(operation).lower().startswith("arr"):
-        metrics += ["Cancellation", "Diversion"]
+    metric_col, operation_col = st.columns([1, 1])
 
-    metric = st.radio(
-        "Choose metric", metrics,
-        horizontal=True, key="airport_metric",
+    metric = metric_col.radio(
+        "Choose metric",
+        metrics,
+        index=len(metrics) - 1,
+        horizontal=True,
+        key="airport_metric",
+    )
+
+    if "_airport_operation" not in st.session_state:
+        st.session_state["_airport_operation"] = (
+            st.session_state.get(
+                "airport_operation",
+                "DEP",
+            )
+        )
+
+    def save_airport_operation():
+        st.session_state["airport_operation"] = (
+            st.session_state["_airport_operation"]
+        )
+
+    if "airport_operation" not in st.session_state:
+        st.session_state["airport_operation"] = "DEP"
+
+    st.session_state["_airport_operation"] = st.session_state[
+        "airport_operation"
+    ]
+
+    def save_airport_operation():
+        st.session_state["airport_operation"] = (
+            st.session_state["_airport_operation"]
+        )
+
+    operation_col.radio(
+        "Operation",
+        ["DEP", "ARR"],
+        horizontal=True,
+        key="_airport_operation",
+        on_change=save_airport_operation,
+        format_func=lambda x: {
+            "DEP": "Departure",
+            "ARR": "Arrival",
+        }.get(x, x),
     )
 
     c1, c2 = st.columns(2)
 
     sort_by = c1.radio(
-        "Sort by", ["Metric", "Airport"],
-        horizontal=True, key="airport_sort",
+        "Sort by",
+        ["Metric", "Airport Name"],
+        horizontal=True,
+        key="airport_sort",
     )
 
     show = c2.radio(
-        "Show", ["Top 20", "Top 50", "Specific"],
-        horizontal=True, key="airport_limit",
+        "Show",
+        ["Top 20", "Top 50", "Specific"],
+        horizontal=True,
+        key="airport_limit",
     )
 
     specific_mode = show == "Specific"
@@ -66,13 +129,21 @@ def show_comparison(all_df, df, color_domain, operation):
         disabled=specific_mode,
     )
 
+    if (
+        str(operation).lower().startswith("arr")
+        and metric in ["Cancellation", "Diversion"]
+    ):
+        st.info(f"{metric}: n/a")
+        return
+
     column = METRICS[metric]
+
     airports = df.copy()
 
     if specific_mode:
         selected = st.session_state.get(
-            "airport_specific_selection",
-            st.session_state.get("airport_selected", []),
+            "airport_selected",
+            [],
         )
 
         if not selected:
@@ -104,7 +175,15 @@ def show_comparison(all_df, df, color_domain, operation):
 
     airports["color_code"] = airports["airport_code"]
 
-    if sort_by == "Airport":
+    if not specific_mode:
+        airports = airports.sort_values(
+            column,
+            ascending=False,
+        ).head(
+            20 if show == "Top 20" else 50
+        )
+
+    if sort_by == "Airport Name":
         airports = airports.sort_values(
             ["city", "airport_code"]
         )
@@ -112,11 +191,6 @@ def show_comparison(all_df, df, color_domain, operation):
         airports = airports.sort_values(
             column,
             ascending=False,
-        )
-
-    if not specific_mode:
-        airports = airports.head(
-            20 if show == "Top 20" else 50
         )
 
     st.session_state["airport_comparison_selection"] = (
@@ -131,10 +205,32 @@ def show_comparison(all_df, df, color_domain, operation):
         all_row["display_code"] = "All Airports"
         all_row["color_code"] = "All Airports"
 
-        airports = pd.concat(
-            [all_row, airports],
-            ignore_index=True,
-        )
+        if sort_by == "Airport Name":
+            all_row_end = all_row.copy()
+            all_row_end["display_code"] = "All Airports "
+
+            airports = pd.concat(
+                [all_row, airports, all_row_end],
+                ignore_index=True,
+            )
+
+        elif (
+            airport_set == "> 1% of all flights"
+            or specific_mode
+        ):
+            airports = pd.concat(
+                [airports, all_row],
+                ignore_index=True,
+            ).sort_values(
+                column,
+                ascending=False,
+            )
+
+        else:
+            airports = pd.concat(
+                [all_row, airports],
+                ignore_index=True,
+            )
 
     chart_order = airports["display_code"].tolist()
 
@@ -154,23 +250,24 @@ def show_comparison(all_df, df, color_domain, operation):
             title=Y_LABELS[metric],
         ),
         color=alt.condition(
-            alt.datum.display_code == "All Airports",
+            alt.datum.color_code == "All Airports",
             alt.value("#FFD700"),
             alt.Color(
                 "color_code:N",
                 scale=alt.Scale(
-                    range=COLORS[1:]
+                    domain=color_domain,
+                    range=color_range(color_domain),
                 ),
                 legend=None,
             ),
         ),
         stroke=alt.condition(
-            alt.datum.display_code == "All Airports",
+            alt.datum.color_code == "All Airports",
             alt.value("#000000"),
             alt.value(None),
         ),
         strokeWidth=alt.condition(
-            alt.datum.display_code == "All Airports",
+            alt.datum.color_code == "All Airports",
             alt.value(6),
             alt.value(0),
         ),
@@ -195,7 +292,7 @@ def show_comparison(all_df, df, color_domain, operation):
     marker = (
         alt.Chart(
             airports[
-                airports["display_code"] == "All Airports"
+                airports["color_code"] == "All Airports"
             ]
         )
         .mark_text(
@@ -232,8 +329,10 @@ def show_map(df, operation):
         metrics += ["Cancellation", "Diversion"]
 
     metric = st.radio(
-        "Map color", metrics,
-        horizontal=True, key="airport_map_metric",
+        "Choose metric",
+        metrics,
+        horizontal=True,
+        key="airport_map_metric",
     )
 
     column = METRICS[metric]
@@ -243,16 +342,12 @@ def show_map(df, operation):
         & df["longitude"].notna()
     ].copy()
 
-    specific_mode = (
-        st.session_state.get("airport_limit") == "Specific"
-    )
-
     selected = st.session_state.get(
-        "airport_specific_selection",
-        st.session_state.get("airport_selected", []),
+        "airport_comparison_selection",
+        [],
     )
 
-    if specific_mode and selected:
+    if selected:
         map_df = map_df[
             map_df["airport_code"].isin(selected)
         ].copy()

@@ -60,16 +60,29 @@ def set_all_airports(airports, value):
 def show_kpis(values, airport_count, operation):
     arrival = str(operation).lower().startswith("arr")
 
+    c1, c2, c3, c4 = st.columns(4)
+
+    c1.metric(
+        "Flights",
+        f"{values['flights']:,.0f}",
+    )
+
+    c2.metric(
+        "On-Time Rate",
+        f"{values['on_time_rate_pct']:.2f} %",
+    )
+
+    c3.metric(
+        "Avg. Delay",
+        f"{values['avg_delay_minutes']:.2f} min",
+    )
+
     if arrival:
-        c1, c2, c3 = st.columns(3)
+        c4.metric(
+            "Cancellation & Diversion Rate",
+            "n/a",
+        )
     else:
-        c1, c2, c3, c4 = st.columns(4)
-
-    c1.metric("Flights", f"{values['flights']:,.0f}")
-    c2.metric("On-Time Rate", f"{values['on_time_rate_pct']:.2f} %")
-    c3.metric("Avg. Delay", f"{values['avg_delay_minutes']:.2f} min")
-
-    if not arrival:
         cancel_diversion = (
             values["cancellation_rate_pct"]
             + values["diversion_rate_pct"]
@@ -79,9 +92,6 @@ def show_kpis(values, airport_count, operation):
             "Cancellation & Diversion Rate",
             f"{cancel_diversion:.2f} %",
         )
-
-    st.caption(f"{airport_count:,} airports")
-
 
 def show_airport_details(all_df, df, operation):
     st.write("Airports")
@@ -113,30 +123,34 @@ def show_airport_details(all_df, df, operation):
         )
 
     codes = airports["airport_code"].tolist()
-
     labels = {}
 
     for row in airports.itertuples(index=False):
         if sort_mode == "Flights":
             labels[row.airport_code] = (
                 f"{row.flights:,.0f} · "
-                f"{row.city} ({row.airport_code})"
+                f"{row.city} ({row.airport_code}) · "
+                f"{row.airport_name}"
             )
 
         elif sort_mode == "Code":
             labels[row.airport_code] = (
-                f"{row.airport_code} · {row.city}"
+                f"{row.airport_code} · "
+                f"{row.city} · "
+                f"{row.airport_name}"
             )
 
         elif sort_mode == "State + City":
             labels[row.airport_code] = (
                 f"{row.state_code} · "
-                f"{row.city} ({row.airport_code})"
+                f"{row.city} ({row.airport_code}) · "
+                f"{row.airport_name}"
             )
 
         else:
             labels[row.airport_code] = (
-                f"{row.city} ({row.airport_code})"
+                f"{row.city} ({row.airport_code}) · "
+                f"{row.airport_name}"
             )
 
     specific_mode = (
@@ -147,12 +161,22 @@ def show_airport_details(all_df, df, operation):
     previous = st.session_state.get("airport_selected", [])
     previous = [code for code in previous if code in codes]
 
+    widget_key = "_airport_specific_selection"
+
+    if widget_key not in st.session_state:
+        st.session_state[widget_key] = previous
+
+    def save_airports():
+        st.session_state["airport_selected"] = (
+            st.session_state[widget_key]
+        )
+
     selected = st.multiselect(
         "Select airports",
         options=codes,
-        default=previous,
         format_func=lambda code: labels[code],
-        key="airport_specific_selection",
+        key=widget_key,
+        on_change=save_airports,
         disabled=not specific_mode,
     )
 
@@ -169,7 +193,15 @@ def show_airport_details(all_df, df, operation):
             "to activate this selection."
         )
 
-    mask = all_df["airport_code"].isin(selected)
+    if specific_mode:
+        detail_codes = selected
+    else:
+        detail_codes = st.session_state.get(
+            "airport_comparison_selection",
+            [],
+        )
+
+    mask = all_df["airport_code"].isin(detail_codes)
 
     columns = [
         "airport_code", "airport_name", "city", "state_code",

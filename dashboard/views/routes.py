@@ -1,116 +1,139 @@
+import pandas as pd
 import streamlit as st
 
-from dashboard.data import load_gold_data
-from dashboard.helpers import aggregate_periods
+from dashboard.data import load_gold_data, load_periods
+from dashboard.helpers import aggregate_periods, select_kpi_period
+from dashboard.views.route_charts import show_comparison
+from dashboard.views.route_timeseries import show_timeseries
+from dashboard.views.route_ui import (
+    WEIGHTED_COLUMNS,
+    add_all_routes,
+    show_kpis,
+    show_route_details,
+)
+
+
+GROUP_COLUMNS = [
+    "origin_airport_id",
+    "origin_airport_code",
+    "origin_city",
+    "origin_state_code",
+    "origin_state",
+    "dest_airport_id",
+    "dest_airport_code",
+    "dest_city",
+    "dest_state_code",
+    "dest_state",
+]
 
 
 def show_routes(periods):
-    df = load_gold_data(
-        "routes",
-        periods,
-    )
+    monthly_df = load_gold_data("routes", periods)
 
-    df = aggregate_periods(
-        df,
-        [
-            "origin_airport_id",
-            "origin_airport_code",
-            "origin_city",
-            "origin_state_code",
-            "origin_state",
-            "dest_airport_id",
-            "dest_airport_code",
-            "dest_city",
-            "dest_state_code",
-            "dest_state",
-            "airline_id",
-            "airline_name",
-            "airline_code",
-            "day_of_week",
-            "day_of_week_name",
-        ],
-        [
-            "avg_dep_delay_minutes",
-            "avg_arr_delay_minutes",
-            "on_time_rate_pct",
-            "cancellation_rate_pct",
-            "diversion_rate_pct",
-        ],
-    )
-
-    st.header("Route Reliability")
-
-    if df.empty:
+    if monthly_df.empty:
         st.info("No route data available.")
         return
 
-    min_flights = st.number_input(
-        "Minimum number of flights",
-        min_value=1,
-        value=20,
-        step=10,
+    df = aggregate_periods(
+        monthly_df,
+        GROUP_COLUMNS,
+        WEIGHTED_COLUMNS,
     )
 
-    filtered = df[
-        df["flights"] >= min_flights
+    df["route"] = (
+        df["origin_airport_code"]
+        + " → "
+        + df["dest_airport_code"]
+    )
+
+    route_count = len(df)
+
+    st.header(
+        "Route Reliability in total for selected "
+        + ("period" if len(periods) == 1 else "periods")
+        + f" - {route_count:,} routes"
+    )    
+
+    all_df = add_all_routes(df)
+
+    color_domain = [
+        "All Routes",
+        *sorted(df["route"].dropna().unique()),
+    ]
+
+    show_kpis(
+        all_df.iloc[0],
+        len(df),
+    )
+
+    show_comparison(
+        all_df,
+        df,
+        color_domain,
+    )
+
+    show_route_details(
+        all_df,
+        df,
+    )
+
+    st.subheader("KPI Development")
+
+    trend_periods = select_kpi_period(
+        load_periods(),
+        periods,
+        "route",
+        "Route KPI Development",
+    )
+
+    if not trend_periods:
+        st.warning("End must not be before Start.")
+        return
+
+    monthly_trend = load_gold_data(
+        "routes",
+        trend_periods,
+    )
+
+    trend_df = aggregate_periods(
+        monthly_trend,
+        ["year", "month"] + GROUP_COLUMNS,
+        WEIGHTED_COLUMNS,
+    )
+
+    trend_df["route"] = (
+        trend_df["origin_airport_code"]
+        + " → "
+        + trend_df["dest_airport_code"]
+    )
+
+    selected = st.session_state.get(
+        "route_comparison_selection",
+        [],
+    )
+
+    trend_df = trend_df[
+        trend_df["route"].isin(selected)
     ].copy()
 
-    filtered["route"] = (
-        filtered["origin_airport_code"]
-        + " → "
-        + filtered["dest_airport_code"]
+    all_routes = aggregate_periods(
+        monthly_trend,
+        ["year", "month"],
+        WEIGHTED_COLUMNS,
     )
 
-    col1, col2, col3 = st.columns(3)
+    all_routes["route"] = "All Routes"
+    all_routes["origin_city"] = "All Routes"
+    all_routes["origin_airport_code"] = None
+    all_routes["dest_city"] = "All Routes"
+    all_routes["dest_airport_code"] = None
 
-    col1.metric(
-        "Route records",
-        len(filtered),
+    trend_df = pd.concat(
+        [all_routes, trend_df],
+        ignore_index=True,
     )
 
-    col2.metric(
-        "Flights",
-        f"{filtered['flights'].sum():,.0f}",
-    )
-
-    weighted_on_time = (
-        (
-            filtered["on_time_rate_pct"]
-            * filtered["flights"]
-        ).sum()
-        / filtered["flights"].sum()
-        if not filtered.empty
-        else 0
-    )
-
-    col3.metric(
-        "Overall On-Time Rate",
-        f"{weighted_on_time:.1f} %",
-    )
-
-    st.subheader("Top 20 Routes by On-Time Rate")
-
-    chart_df = (
-        filtered[
-            [
-                "route",
-                "on_time_rate_pct",
-            ]
-        ]
-        .sort_values(
-            "on_time_rate_pct",
-            ascending=False,
-        )
-        .head(20)
-        .set_index("route")
-    )
-
-    st.bar_chart(chart_df)
-
-    st.subheader("Route Data")
-
-    st.dataframe(
-        filtered,
-        width="stretch",
-        hide_index=True,
+    show_timeseries(
+        trend_df,
+        color_domain,
     )

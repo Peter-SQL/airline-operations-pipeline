@@ -4,7 +4,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from dashboard.views.airport_charts import color_range
+from dashboard.views.route_charts import color_range
 
 
 def period_axis(df):
@@ -24,7 +24,7 @@ def period_axis(df):
 
 def color_encoding(domain, colors):
     return alt.Color(
-        "display_airport:N",
+        "display_route:N",
         scale=alt.Scale(domain=domain, range=colors),
         legend=None,
     )
@@ -45,7 +45,7 @@ def show_legend(domain, colors):
     st.markdown(
         f"""
         <div style="max-height:520px;overflow-y:auto;padding-right:8px;">
-            <b>Airport</b>
+            <b>Route</b>
             {items}
         </div>
         """,
@@ -67,7 +67,7 @@ def kpi_chart(df, column, title, domain, colors):
             ),
             color=color_encoding(domain, colors),
             tooltip=[
-                alt.Tooltip("display_airport:N", title="Airport"),
+                alt.Tooltip("display_route:N", title="Route"),
                 alt.Tooltip("period:T", title="Month", format="%Y-%m"),
                 alt.Tooltip(f"{column}:Q", title=title, format=".2f"),
             ],
@@ -76,7 +76,7 @@ def kpi_chart(df, column, title, domain, colors):
 
 
 def flights_chart(df, domain, colors):
-    flights_df = df[df["airport_code"] != "All Airports"]
+    flights_df = df[df["route"] != "All Routes"]
 
     return (
         alt.Chart(flights_df)
@@ -90,7 +90,7 @@ def flights_chart(df, domain, colors):
             ),
             color=color_encoding(domain, colors),
             tooltip=[
-                alt.Tooltip("display_airport:N", title="Airport"),
+                alt.Tooltip("display_route:N", title="Route"),
                 alt.Tooltip("period:T", title="Month", format="%Y-%m"),
                 alt.Tooltip("flights:Q", title="Flights", format=",.0f"),
             ],
@@ -98,32 +98,30 @@ def flights_chart(df, domain, colors):
     )
 
 
-def show_timeseries(df, color_domain, operation):
+def show_timeseries(df, color_domain):
     if df.empty:
         st.info("No data available for the selected period.")
         return
 
     df = df.copy()
-
     df["period"] = pd.to_datetime(
         dict(year=df["year"], month=df["month"], day=1)
     )
 
-    df["display_airport"] = df["airport_code"]
+    df["display_route"] = df["route"]
+    mask = df["route"] != "All Routes"
 
-    mask = df["airport_code"] != "All Airports"
-
-    df.loc[mask, "display_airport"] = (
-        df.loc[mask, "city"].fillna("")
-        + " ("
-        + df.loc[mask, "airport_code"]
-        + ")"
+    df.loc[mask, "display_route"] = (
+        df.loc[mask, "origin_city"].fillna("")
+        + " (" + df.loc[mask, "origin_airport_code"] + ") → "
+        + df.loc[mask, "dest_city"].fillna("")
+        + " (" + df.loc[mask, "dest_airport_code"] + ")"
     )
 
-    code_labels = (
-        df[["airport_code", "display_airport"]]
+    route_labels = (
+        df[["route", "display_route"]]
         .drop_duplicates()
-        .set_index("airport_code")["display_airport"]
+        .set_index("route")["display_route"]
         .to_dict()
     )
 
@@ -132,67 +130,51 @@ def show_timeseries(df, color_domain, operation):
     )
 
     selected = st.session_state.get(
-        "airport_comparison_selection",
-        [],
+        "route_comparison_selection", []
     )
 
-    present_codes = (
-        ["All Airports"]
-        + [code for code in selected if code in code_labels]
-    )
+    present_routes = [
+        "All Routes",
+        *[route for route in selected if route in route_labels],
+    ]
 
     display_domain = [
-        code_labels[code] for code in present_codes
+        route_labels[route] for route in present_routes
+    ]
+    display_colors = [
+        color_lookup[route] for route in present_routes
     ]
 
-    display_colors = [
-        color_lookup[code] for code in present_codes
-    ]
+    df["cancel_diversion_rate_pct"] = (
+        df["cancellation_rate_pct"]
+        + df["diversion_rate_pct"]
+    )
 
     charts = [
         ("On-Time", "on_time_rate_pct", "On-Time Rate (%)"),
-        ("Avg. Delay", "avg_delay_minutes", "Avg. Delay (Min)"),
+        ("Dep. Delay", "avg_dep_delay_minutes", "Avg. Departure Delay (Min)"),
+        ("Arr. Delay", "avg_arr_delay_minutes", "Avg. Arrival Delay (Min)"),
+        (
+            "Cancellation & Diversion",
+            "cancel_diversion_rate_pct",
+            "Cancellation & Diversion Rate (%)",
+        ),
     ]
 
-    if not str(operation).lower().startswith("arr"):
-        df["cancel_diversion_rate_pct"] = (
-            df["cancellation_rate_pct"]
-            + df["diversion_rate_pct"]
-        )
-
-        charts.append(
-            (
-                "Cancellation & Diversion",
-                "cancel_diversion_rate_pct",
-                "Cancellation & Diversion Rate (%)",
-            )
-        )
-
-    df = df.sort_values(["period", "display_airport"])
-
-    flights = flights_chart(
-        df,
-        display_domain,
-        display_colors,
-    )
-
+    df = df.sort_values(["period", "display_route"])
+    flights = flights_chart(df, display_domain, display_colors)
     tabs = st.tabs([name for name, _, _ in charts])
 
     for tab, (_, column, title) in zip(tabs, charts):
         with tab:
-            st.caption(
-                "Solid line = Flights · Dashed line = KPI"
-            )
+            st.caption("Solid line = Flights · Dashed line = KPI")
 
             chart = (
                 alt.layer(
                     flights,
                     kpi_chart(
-                        df,
-                        column,
-                        title,
-                        display_domain,
-                        display_colors,
+                        df, column, title,
+                        display_domain, display_colors,
                     ),
                 )
                 .resolve_scale(y="independent")
@@ -205,7 +187,4 @@ def show_timeseries(df, color_domain, operation):
                 st.altair_chart(chart, width="stretch")
 
             with legend_col:
-                show_legend(
-                    display_domain,
-                    display_colors,
-                )
+                show_legend(display_domain, display_colors)

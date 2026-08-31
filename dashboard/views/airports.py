@@ -22,25 +22,11 @@ GROUP_COLUMNS = [
 def show_airports(periods):
     monthly_df = load_gold_data("airports", periods)
 
-    st.header(
-        "Airport Reliability in total for selected "
-        + ("period" if len(periods) == 1 else "periods")
-    )
-
     if monthly_df.empty:
         st.info("No airport data available.")
         return
 
-    operations = sorted(
-        monthly_df["operation"].dropna().unique()
-    )
-
-    operation = st.radio(
-        "Operation",
-        operations,
-        horizontal=True,
-        key="airport_operation",
-    )
+    operation = st.session_state.get("airport_operation", "DEP")
 
     monthly_df = monthly_df[
         monthly_df["operation"] == operation
@@ -50,6 +36,14 @@ def show_airports(periods):
         monthly_df,
         GROUP_COLUMNS,
         WEIGHTED_COLUMNS,
+    )
+
+    airport_count = df["airport_id"].nunique()
+
+    st.header(
+        "Airport Reliability in total for selected "
+        + ("period" if len(periods) == 1 else "periods")
+        + f" - {airport_count:,} airports"
     )
 
     all_df = add_all_airports(df)

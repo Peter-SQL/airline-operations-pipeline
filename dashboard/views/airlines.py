@@ -31,9 +31,11 @@ def show_airlines(periods):
     )
 
     period_label = "period" if len(periods) == 1 else "periods"
+    airline_count = df["airline_id"].nunique()
 
     st.header(
-        f"Airline Reliability in total for selected {period_label}"
+        f"Airline Reliability in total for selected {period_label} "
+        f"- {airline_count:,} airlines"
     )
 
     if df.empty:
