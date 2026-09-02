@@ -181,17 +181,6 @@ def airline_reliability_pipeline():
     def silver_flights(period, **context):
         year, month = period
 
-        # Demo:
-        # 1. Versuch schlägt fehl.
-        # 2. Versuch läuft erfolgreich.
-        if (
-            DEMO_MODE
-            and context["ti"].try_number == 1
-        ):
-            raise RuntimeError(
-                "DEMO: temporary Silver failure."
-            )
-
         run_module(
             "src.transformation.silver_transformation",
             year,
@@ -243,9 +232,25 @@ def airline_reliability_pipeline():
             month,
         )
 
-    @task
-    def data_quality_checks(period):
+    @task(
+        retries=2,
+        retry_delay=pendulum.duration(seconds=5),
+    )
+    def data_quality_checks(period, **context):
         year, month = period
+
+        # Demo:
+        # Versuch 1 schlägt simuliert fehl.
+        # Versuch 2 schlägt simuliert fehl.
+        # Versuch 3 führt die echten Data Quality Checks aus.
+        if (
+            DEMO_MODE
+            and context["ti"].try_number <= 2
+        ):
+            raise RuntimeError(
+                f"DEMO: temporary Data Quality failure - "
+                f"attempt {context['ti'].try_number}."
+            )
 
         quality_sql_path = Path(
             "/opt/airflow/project/sql/data_quality_checks.sql"
@@ -262,7 +267,6 @@ def airline_reliability_pipeline():
             user=os.getenv("POSTGRES_USER"),
             password=os.getenv("POSTGRES_PASSWORD"),
         ) as conn:
-
             with conn.cursor() as cur:
                 cur.execute(
                     quality_sql,
